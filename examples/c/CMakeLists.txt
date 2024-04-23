@@ -167,10 +167,24 @@ define_c_test(
 )
 
 define_c_test(
+    TARGET ex_transaction
+    SOURCES ex_transaction.c
+    DIR_NAME ex_transaction
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:ex_transaction>/WT_HOME>
+)
+
+define_c_test(
     TARGET ex_verbose
     SOURCES ex_verbose.c
     DIR_NAME ex_verbose
     ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:ex_verbose>/WT_HOME>
+)
+
+define_c_test(
+    TARGET ex_with_vid
+    SOURCES ex_with_vid.c
+    DIR_NAME ex_with_vid
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:ex_with_vid>/WT_HOME>
 )
 
 if(NOT "${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
