@@ -12,7 +12,8 @@
 /*
  * Initialize a static WT_CURSOR structure.
  */
-#define WT_CURSOR_STATIC_INIT(n, get_key, get_value, get_raw_key_value, set_key, set_value,      \
+#define WT_CURSOR_STATIC_INIT(n, get_key, get_value, get_key_with_vid, get_value_with_vid,       \
+  get_raw_key_value, set_key, set_value, set_key_with_vid, set_value_with_vid,                   \
   compare, equals, next, prev, reset, search, search_near, insert, modify, update, remove,       \
   reserve, reconfigure, largest_key, bound, cache, reopen, checkpoint_id, close)                 \
     static const WT_CURSOR n = {                                                                 \
@@ -20,7 +21,8 @@
       NULL, /* uri */                                                                            \
       NULL, /* key_format */                                                                     \
       NULL, /* value_format */                                                                   \
-      get_key, get_value, get_raw_key_value, set_key, set_value, compare, equals, next, prev,    \
+      get_key, get_value, get_key_with_vid, get_value_with_vid, get_raw_key_value,               \
+      set_key, set_value, set_key_with_vid, set_value_with_vid, compare, equals, next, prev,      \
       reset, search, search_near, insert, modify, update, remove, reserve, checkpoint_id, close, \
       largest_key, reconfigure, bound, cache, reopen, 0, /* uri_hash */                          \
       {NULL, NULL},                                      /* TAILQ_ENTRY q */                     \
@@ -28,12 +30,12 @@
       {0},                                               /* recno raw buffer */                  \
       NULL,                                              /* json_private */                      \
       NULL,                                              /* lang_private */                      \
-      {NULL, 0, NULL, 0, 0},                             /* WT_ITEM key */                       \
-      {NULL, 0, NULL, 0, 0},                             /* WT_ITEM value */                     \
+      {NULL, 0, NULL, 0, NULL, 0, 0},                    /* WT_ITEM key */                       \
+      {NULL, 0, NULL, 0, NULL, 0, 0},                    /* WT_ITEM value */                     \
       0,                                                 /* int saved_err */                     \
       NULL,                                              /* internal_uri */                      \
-      {NULL, 0, NULL, 0, 0},                             /* WT_ITEM lower bound */               \
-      {NULL, 0, NULL, 0, 0},                             /* WT_ITEM upper bound */               \
+      {NULL, 0, NULL, 0, NULL, 0, 0},                    /* WT_ITEM lower bound */               \
+      {NULL, 0, NULL, 0, NULL, 0, 0},                    /* WT_ITEM upper bound */               \
       0                                                  /* uint32_t flags */                    \
     }
 

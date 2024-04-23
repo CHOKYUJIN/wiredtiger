@@ -65,12 +65,12 @@ WT_STAT_USECS_HIST_INCR_FUNC(opwrite, perf_hist_opwrite_latency, 100)
     } while (0)
 
 /*
- * __curfile_check_cbt_txn --
+ * __curblue_check_cbt_txn --
  *     Enforce restrictions on nesting checkpoint cursors. The only nested cursors we should get to
  *     from a checkpoint cursor are cursors for the corresponding history store checkpoint.
  */
 static inline int
-__curfile_check_cbt_txn(WT_SESSION_IMPL *session, WT_CURSOR_BTREE *cbt)
+__curblue_check_cbt_txn(WT_SESSION_IMPL *session, WT_CURSOR_BTREE *cbt)
 {
     WT_TXN *txn;
 
@@ -93,25 +93,184 @@ __curfile_check_cbt_txn(WT_SESSION_IMPL *session, WT_CURSOR_BTREE *cbt)
 }
 
 /*
- * __wt_cursor_checkpoint_id --
- *     Return the checkpoint ID for checkpoint cursors, otherwise 0.
+ * __curblue_set_keyv --
+ *     WT_CURSOR->set_key_with_vid default implementation.
  */
-uint64_t
-__wt_cursor_checkpoint_id(WT_CURSOR *cursor)
+static int
+__curblue_set_keyv(WT_CURSOR *cursor, uint64_t flags, va_list ap)
 {
-    WT_CURSOR_BTREE *cbt;
+    WT_DECL_RET;
+    WT_ITEM *buf, *item, tmp;
+    WT_SESSION_IMPL *session;
+    size_t sz = 0;
+    const char *fmt, *str;
 
-    cbt = (WT_CURSOR_BTREE *)cursor;
+    buf = &cursor->key;
+    tmp.mem = NULL;
 
-    return (cbt->checkpoint_id);
+    CURSOR_API_CALL(cursor, session, set_key, NULL);
+    WT_ERR(__cursor_copy_release(cursor));
+    if (F_ISSET(cursor, WT_CURSTD_KEY_SET) && WT_DATA_IN_ITEM(buf)) {
+        tmp = *buf;
+        buf->mem = NULL;
+        buf->memsize = 0;
+    }
+
+    F_CLR(cursor, WT_CURSTD_KEY_SET);
+
+    /* kyu-jin: cur_blue with version id should only work with raw format key and value */
+    fmt = cursor->key_format;
+    if (LF_ISSET(WT_CURSOR_RAW_OK | WT_CURSTD_DUMP_JSON) || WT_STREQ(fmt, "u")) {
+        item = va_arg(ap, WT_ITEM *);
+        sz = item->size;
+        buf->data = item->data;
+        buf->vid = item->vid;
+        buf->vid_size = item->vid_size;
+    } else if (WT_STREQ(fmt, "S")) { /* for debugging */
+        str = va_arg(ap, const char *);
+        sz = strlen(str) + 1;
+        buf->data = (void *)str;
+        buf->vid = va_arg(ap, const char *);
+        buf->vid_size = strlen(buf->vid) + 1;
+    } else {
+        WT_ERR_MSG(session, EINVAL, "cur_blue with version id should only work with u format or S format for debugging");
+    }
+
+    if (sz == 0)
+        WT_ERR_MSG(session, EINVAL, "Empty keys not permitted");
+    else if ((uint32_t)sz != sz)
+        WT_ERR_MSG(session, EINVAL, "Key size (%" PRIu64 ") out of range", (uint64_t)sz);
+
+    if(buf->vid_size <= 0) 
+        WT_ERR_MSG(session, EINVAL, "Version id is not set");
+
+    cursor->saved_err = 0;
+    buf->size = sz;
+
+    F_SET(cursor, WT_CURSTD_KEY_EXT);
+    if (0) {
+err:
+        cursor->saved_err = ret;
+    }
+
+    /*
+     * If we copied the key, either put the memory back into the cursor, or if we allocated some
+     * memory in the meantime, free it.
+     */
+    if (tmp.mem != NULL) {
+        if (buf->mem == NULL && !FLD_ISSET(S2C(session)->debug_flags, WT_CONN_DEBUG_CURSOR_COPY)) {
+            buf->mem = tmp.mem;
+            buf->memsize = tmp.memsize;
+            F_SET(cursor, WT_CURSTD_DEBUG_COPY_KEY);
+        } else
+            __wt_free(session, tmp.mem);
+    }
+    API_END_RET(session, ret);
 }
 
 /*
- * __curfile_compare --
+ * __curblue_set_valuev --
+ *     WT_CURSOR->set_value_with_vid worker implementation.
+ */
+static int
+__curblue_set_valuev(WT_CURSOR *cursor, const char *fmt, va_list ap)
+{
+    WT_DECL_RET;
+    WT_ITEM *buf, *item, tmp;
+    WT_SESSION_IMPL *session;
+    size_t sz;
+
+    va_list ap_copy;
+
+    buf = &cursor->value;
+    tmp.mem = NULL;
+
+    CURSOR_API_CALL(cursor, session, set_value, NULL);
+    WT_ERR(__cursor_copy_release(cursor));
+    if (F_ISSET(cursor, WT_CURSTD_VALUE_SET) && WT_DATA_IN_ITEM(buf)) {
+        tmp = *buf;
+        buf->mem = NULL;
+        buf->memsize = 0;
+    }
+
+    F_CLR(cursor, WT_CURSTD_VALUE_SET);
+
+    /* kyu-jin: cur_blue with version id should only work with raw format key and value */
+    if (F_ISSET(cursor, WT_CURSOR_RAW_OK | WT_CURSTD_DUMP_JSON) || WT_STREQ(fmt, "u")) {
+        item = va_arg(ap, WT_ITEM *);
+        sz = item->size;
+        buf->data = item->data;
+    } else {
+        va_copy(ap_copy, ap);
+        ret = __wt_struct_sizev(session, &sz, fmt, ap_copy);
+        va_end(ap_copy);
+        WT_ERR(ret);
+
+        WT_ERR(__wt_buf_initsize(session, buf, sz));
+        WT_ERR(__wt_struct_packv(session, buf->mem, sz, fmt, ap));
+    }
+    F_SET(cursor, WT_CURSTD_VALUE_EXT);
+    buf->size = sz;
+
+    if (0) {
+err:
+        cursor->saved_err = ret;
+    }
+
+    /*
+     * If we copied the value, either put the memory back into the cursor, or if we allocated some
+     * memory in the meantime, free it.
+     */
+    if (tmp.mem != NULL) {
+        if (buf->mem == NULL && !FLD_ISSET(S2C(session)->debug_flags, WT_CONN_DEBUG_CURSOR_COPY)) {
+            buf->mem = tmp.mem;
+            buf->memsize = tmp.memsize;
+            F_SET(cursor, WT_CURSTD_DEBUG_COPY_VALUE);
+        } else
+            __wt_free(session, tmp.mem);
+    }
+
+    API_END_RET(session, ret);
+}
+
+
+/*
+ * __curblue_set_key_with_vid --
+ *     WT_CURSOR->set_key for the btree cursor type.
+ */
+static void
+__curblue_set_key_with_vid(WT_CURSOR *cursor, ...)
+{
+    WT_DECL_RET;
+    va_list ap;
+
+    va_start(ap, cursor);
+    if ((ret = __curblue_set_keyv(cursor, cursor->flags, ap)) != 0)
+        WT_IGNORE_RET(__wt_panic(CUR2S(cursor), ret, "failed to set key"));
+    va_end(ap);
+}
+
+/*
+ * __curblue_set_value_with_vid --
+ *     WT_CURSOR->set_value for the btree cursor type.
+ * kyu-jin: I'm not sure that we really need this.
+ */
+static void
+__curblue_set_value_with_vid(WT_CURSOR *cursor, ...)
+{
+    va_list ap;
+
+    va_start(ap, cursor);
+    WT_IGNORE_RET(__curblue_set_valuev(cursor, cursor->value_format, ap));
+    va_end(ap);
+}
+
+/*
+ * __curblue_compare --
  *     WT_CURSOR->compare method for the btree cursor type.
  */
 static int
-__curfile_compare(WT_CURSOR *a, WT_CURSOR *b, int *cmpp)
+__curblue_compare(WT_CURSOR *a, WT_CURSOR *b, int *cmpp)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -137,11 +296,11 @@ err:
 }
 
 /*
- * __curfile_equals --
+ * __curblue_equals --
  *     WT_CURSOR->equals method for the btree cursor type.
  */
 static int
-__curfile_equals(WT_CURSOR *a, WT_CURSOR *b, int *equalp)
+__curblue_equals(WT_CURSOR *a, WT_CURSOR *b, int *equalp)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -167,11 +326,11 @@ err:
 }
 
 /*
- * __curfile_next --
+ * __curblue_next --
  *     WT_CURSOR->next method for the btree cursor type.
  */
 static int
-__curfile_next(WT_CURSOR *cursor)
+__curblue_next(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -183,7 +342,7 @@ __curfile_next(WT_CURSOR *cursor)
     CURSOR_REPOSITION_ENTER(cursor, session);
     WT_ERR(__cursor_copy_release(cursor));
 
-    WT_ERR(__curfile_check_cbt_txn(session, cbt));
+    WT_ERR(__curblue_check_cbt_txn(session, cbt));
 
     WT_WITH_CHECKPOINT(session, cbt, ret = __wt_btcur_next(cbt, false));
     WT_ERR(ret);
@@ -200,12 +359,12 @@ err:
 }
 
 /*
- * __wt_curfile_next_random --
+ * __wt_curblue_next_random --
  *     WT_CURSOR->next method for the btree cursor type when configured with next_random. This is
  *     exported because it is called directly within LSM.
  */
 int
-__wt_curfile_next_random(WT_CURSOR *cursor)
+__wt_curblue_next_random(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -215,7 +374,7 @@ __wt_curfile_next_random(WT_CURSOR *cursor)
     CURSOR_API_CALL(cursor, session, next, CUR2BT(cbt));
     WT_ERR(__cursor_copy_release(cursor));
 
-    WT_ERR(__curfile_check_cbt_txn(session, cbt));
+    WT_ERR(__curblue_check_cbt_txn(session, cbt));
 
     WT_WITH_CHECKPOINT(session, cbt, ret = __wt_btcur_next_random(cbt));
     WT_ERR(ret);
@@ -230,11 +389,11 @@ err:
 }
 
 /*
- * __curfile_prev --
+ * __curblue_prev --
  *     WT_CURSOR->prev method for the btree cursor type.
  */
 static int
-__curfile_prev(WT_CURSOR *cursor)
+__curblue_prev(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -246,7 +405,7 @@ __curfile_prev(WT_CURSOR *cursor)
     CURSOR_REPOSITION_ENTER(cursor, session);
     WT_ERR(__cursor_copy_release(cursor));
 
-    WT_ERR(__curfile_check_cbt_txn(session, cbt));
+    WT_ERR(__curblue_check_cbt_txn(session, cbt));
 
     WT_WITH_CHECKPOINT(session, cbt, ret = __wt_btcur_prev(cbt, false));
     WT_ERR(ret);
@@ -263,11 +422,11 @@ err:
 }
 
 /*
- * __curfile_reset --
+ * __curblue_reset --
  *     WT_CURSOR->reset method for the btree cursor type.
  */
 static int
-__curfile_reset(WT_CURSOR *cursor)
+__curblue_reset(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -297,11 +456,11 @@ err:
 }
 
 /*
- * __curfile_search --
+ * __curblue_search --
  *     WT_CURSOR->search method for the btree cursor type.
  */
 static int
-__curfile_search(WT_CURSOR *cursor)
+__curblue_search(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -315,7 +474,7 @@ __curfile_search(WT_CURSOR *cursor)
     WT_ERR(__cursor_copy_release(cursor));
     WT_ERR(__cursor_checkkey(cursor));
 
-    WT_ERR(__curfile_check_cbt_txn(session, cbt));
+    WT_ERR(__curblue_check_cbt_txn(session, cbt));
 
     time_start = __wt_clock(session);
     WT_WITH_CHECKPOINT(session, cbt, ret = __wt_btcur_search(cbt));
@@ -335,11 +494,11 @@ err:
 }
 
 /*
- * __curfile_search_near --
+ * __curblue_search_near --
  *     WT_CURSOR->search_near method for the btree cursor type.
  */
 static int
-__curfile_search_near(WT_CURSOR *cursor, int *exact)
+__curblue_search_near(WT_CURSOR *cursor, int *exact)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -353,7 +512,7 @@ __curfile_search_near(WT_CURSOR *cursor, int *exact)
     WT_ERR(__cursor_copy_release(cursor));
     WT_ERR(__cursor_checkkey(cursor));
 
-    WT_ERR(__curfile_check_cbt_txn(session, cbt));
+    WT_ERR(__curblue_check_cbt_txn(session, cbt));
 
     time_start = __wt_clock(session);
     WT_WITH_CHECKPOINT(session, cbt, ret = __wt_btcur_search_near(cbt, exact));
@@ -373,11 +532,11 @@ err:
 }
 
 /*
- * __curfile_insert --
+ * __curblue_insert --
  *     WT_CURSOR->insert method for the btree cursor type.
  */
 static int
-__curfile_insert(WT_CURSOR *cursor)
+__curblue_insert(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -393,7 +552,11 @@ __curfile_insert(WT_CURSOR *cursor)
     WT_ERR(__cursor_checkvalue(cursor));
 
     time_start = __wt_clock(session);
-    WT_ERR(__wt_btcur_insert(cbt));
+    if(cursor->key.vid_size > 0) {
+        WT_ERR(__wt_btcur_insert_with_vid(cbt));
+    } else {
+        WT_ERR(__wt_btcur_insert(cbt));
+    }
     time_stop = __wt_clock(session);
     __wt_stat_usecs_hist_incr_opwrite(session, WT_CLOCKDIFF_US(time_stop, time_start));
 
@@ -414,11 +577,11 @@ err:
 }
 
 /*
- * __wt_curfile_insert_check --
+ * __wt_curblue_insert_check --
  *     WT_CURSOR->insert_check method for the btree cursor type.
  */
 int
-__wt_curfile_insert_check(WT_CURSOR *cursor)
+__wt_curblue_insert_check(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -443,11 +606,11 @@ err:
 }
 
 /*
- * __curfile_modify --
+ * __curblue_modify --
  *     WT_CURSOR->modify method for the btree cursor type.
  */
 static int
-__curfile_modify(WT_CURSOR *cursor, WT_MODIFY *entries, int nentries)
+__curblue_modify(WT_CURSOR *cursor, WT_MODIFY *entries, int nentries)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -477,11 +640,11 @@ err:
 }
 
 /*
- * __curfile_update --
+ * __curblue_update --
  *     WT_CURSOR->update method for the btree cursor type.
  */
 static int
-__curfile_update(WT_CURSOR *cursor)
+__curblue_update(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -510,11 +673,11 @@ err:
 }
 
 /*
- * __curfile_remove --
+ * __curblue_remove --
  *     WT_CURSOR->remove method for the btree cursor type.
  */
 static int
-__curfile_remove(WT_CURSOR *cursor)
+__curblue_remove(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -563,11 +726,11 @@ err:
 }
 
 /*
- * __curfile_reserve --
+ * __curblue_reserve --
  *     WT_CURSOR->reserve method for the btree cursor type.
  */
 static int
-__curfile_reserve(WT_CURSOR *cursor)
+__curblue_reserve(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -604,11 +767,11 @@ err:
 }
 
 /*
- * __curfile_close --
+ * __curblue_close --
  *     WT_CURSOR->close method for the btree cursor type.
  */
 static int
-__curfile_close(WT_CURSOR *cursor)
+__curblue_close(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -676,11 +839,11 @@ done:
 }
 
 /*
- * __curfile_cache --
+ * __curblue_cache --
  *     WT_CURSOR->cache method for the btree cursor type.
  */
 static int
-__curfile_cache(WT_CURSOR *cursor)
+__curblue_cache(WT_CURSOR *cursor)
 {
     WT_CURSOR_BTREE *cbt;
     WT_DECL_RET;
@@ -695,11 +858,11 @@ __curfile_cache(WT_CURSOR *cursor)
 }
 
 /*
- * __curfile_reopen_int --
- *     Helper for __curfile_reopen, called with the session data handle set.
+ * __curblue_reopen_int --
+ *     Helper for __curblue_reopen, called with the session data handle set.
  */
 static int
-__curfile_reopen_int(WT_CURSOR *cursor)
+__curblue_reopen_int(WT_CURSOR *cursor)
 {
     WT_BTREE *btree;
     WT_DATA_HANDLE *dhandle;
@@ -750,11 +913,11 @@ __curfile_reopen_int(WT_CURSOR *cursor)
 }
 
 /*
- * __curfile_reopen --
+ * __curblue_reopen --
  *     WT_CURSOR->reopen method for the btree cursor type.
  */
 static int
-__curfile_reopen(WT_CURSOR *cursor, bool sweep_check_only)
+__curblue_reopen(WT_CURSOR *cursor, bool sweep_check_only)
 {
     WT_DATA_HANDLE *dhandle;
     WT_DECL_RET;
@@ -784,16 +947,16 @@ __curfile_reopen(WT_CURSOR *cursor, bool sweep_check_only)
      * call, so we need to restore the original data handle that was in our session after the reopen
      * completes.
      */
-    WT_WITH_DHANDLE(session, dhandle, ret = __curfile_reopen_int(cursor));
+    WT_WITH_DHANDLE(session, dhandle, ret = __curblue_reopen_int(cursor));
     API_RET_STAT(session, ret, cursor_reopen);
 }
 
 /*
- * __curfile_setup_checkpoint --
+ * __curblue_setup_checkpoint --
  *     Open helper code for checkpoint cursors.
  */
 static int
-__curfile_setup_checkpoint(WT_CURSOR_BTREE *cbt, const char *cfg[], WT_DATA_HANDLE *hs_dhandle,
+__curblue_setup_checkpoint(WT_CURSOR_BTREE *cbt, const char *cfg[], WT_DATA_HANDLE *hs_dhandle,
   WT_CKPT_SNAPSHOT *ckpt_snapshot)
 {
     WT_CONFIG_ITEM cval;
@@ -934,11 +1097,11 @@ err:
 }
 
 /*
- * __curfile_create --
+ * __curblue_create --
  *     Open a cursor for a given btree handle.
  */
 static int
-__curfile_create(WT_SESSION_IMPL *session, WT_CURSOR *owner, const char *cfg[], bool bulk,
+__curblue_create(WT_SESSION_IMPL *session, WT_CURSOR *owner, const char *cfg[], bool bulk,
   bool bitmap, WT_DATA_HANDLE *hs_dhandle, WT_CKPT_SNAPSHOT *ckpt_snapshot, WT_CURSOR **cursorp)
 {
     WT_CURSOR_STATIC_INIT(iface, __wt_cursor_get_key, /* get-key */
@@ -948,27 +1111,27 @@ __curfile_create(WT_SESSION_IMPL *session, WT_CURSOR *owner, const char *cfg[], 
       __wt_cursor_get_raw_key_value,                  /* get-raw-key-value */
       __wt_cursor_set_key,                            /* set-key */
       __wt_cursor_set_value,                          /* set-value */
-      __wt_cursor_set_key_with_vid_notsup,            /* set-key-with-vid */
-      __wt_cursor_set_value_with_vid_notsup,          /* set-value-with-vid */
-      __curfile_compare,                              /* compare */
-      __curfile_equals,                               /* equals */
-      __curfile_next,                                 /* next */
-      __curfile_prev,                                 /* prev */
-      __curfile_reset,                                /* reset */
-      __curfile_search,                               /* search */
-      __curfile_search_near,                          /* search-near */
-      __curfile_insert,                               /* insert */
+      __curblue_set_key_with_vid,                     /* set-key-with-vid */
+      __curblue_set_value_with_vid,                   /* set-value-with-vid */
+      __curblue_compare,                              /* compare */
+      __curblue_equals,                               /* equals */
+      __curblue_next,                                 /* next */
+      __curblue_prev,                                 /* prev */
+      __curblue_reset,                                /* reset */
+      __curblue_search,                               /* search */
+      __curblue_search_near,                          /* search-near */
+      __curblue_insert,                               /* insert */
       __wt_cursor_modify_value_format_notsup,         /* modify */
-      __curfile_update,                               /* update */
-      __curfile_remove,                               /* remove */
-      __curfile_reserve,                              /* reserve */
+      __curblue_update,                               /* update */
+      __curblue_remove,                               /* remove */
+      __curblue_reserve,                              /* reserve */
       __wt_cursor_reconfigure,                        /* reconfigure */
       __wt_cursor_largest_key,                        /* largest_key */
       __wt_cursor_bound,                              /* bound */
-      __curfile_cache,                                /* cache */
-      __curfile_reopen,                               /* reopen */
+      __curblue_cache,                                /* cache */
+      __curblue_reopen,                               /* reopen */
       __wt_cursor_checkpoint_id,                      /* checkpoint ID */
-      __curfile_close);                               /* close */
+      __curblue_close);                               /* close */
     WT_BTREE *btree;
     WT_CONFIG_ITEM cval;
     WT_CURSOR *cursor;
@@ -1006,7 +1169,7 @@ __curfile_create(WT_SESSION_IMPL *session, WT_CURSOR *owner, const char *cfg[], 
         if (bulk)
             /* Fail now; otherwise we fail further down and then segfault trying to recover. */
             WT_RET_MSG(session, EINVAL, "checkpoints are read-only and cannot be bulk-loaded");
-        WT_RET(__curfile_setup_checkpoint(cbt, cfg, hs_dhandle, ckpt_snapshot));
+        WT_RET(__curblue_setup_checkpoint(cbt, cfg, hs_dhandle, ckpt_snapshot));
     } else {
         /* We should not have been given the bits used by checkpoint cursors. */
         WT_ASSERT(session, hs_dhandle == NULL);
@@ -1033,8 +1196,8 @@ __curfile_create(WT_SESSION_IMPL *session, WT_CURSOR *owner, const char *cfg[], 
               session, ENOTSUP, "next_random configuration not supported for column-store objects");
 
         __wt_cursor_set_notsup(cursor);
-        cursor->next = __wt_curfile_next_random;
-        cursor->reset = __curfile_reset;
+        cursor->next = __wt_curblue_next_random;
+        cursor->reset = __curblue_reset;
 
         WT_ERR(__wt_config_gets_def(session, cfg, "next_random_sample_size", 0, &cval));
         if (cval.val != 0)
@@ -1055,7 +1218,7 @@ __curfile_create(WT_SESSION_IMPL *session, WT_CURSOR *owner, const char *cfg[], 
      */
     if ((WT_STREQ(cursor->value_format, "S") || WT_STREQ(cursor->value_format, "u")) &&
       __wt_version_gte(S2C(session)->compat_version, WT_LOG_V2_VERSION))
-        cursor->modify = __curfile_modify;
+        cursor->modify = __curblue_modify;
 
     /* Cursors on metadata should not be cached, doing so interferes with named checkpoints. */
     if (cacheable && strcmp(WT_METAFILE_URI, cursor->internal_uri) != 0)
@@ -1076,7 +1239,7 @@ err:
         cbt->dhandle = NULL;
         cbt->checkpoint_hs_dhandle = NULL;
 
-        WT_TRET(__curfile_close(cursor));
+        WT_TRET(__curblue_close(cursor));
         *cursorp = NULL;
     }
 
@@ -1084,11 +1247,11 @@ err:
 }
 
 /*
- * __wt_curfile_open --
+ * __wt_curblue_open --
  *     WT_SESSION->open_cursor method for the btree cursor type.
  */
 int
-__wt_curfile_open(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *owner, const char *cfg[],
+__wt_curblue_open(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *owner, const char *cfg[],
   WT_CURSOR **cursorp)
 {
     WT_CKPT_SNAPSHOT ckpt_snapshot;
@@ -1169,7 +1332,7 @@ __wt_curfile_open(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *owner, c
      * 5. To avoid a proliferation of cases, and to avoid repeatedly parsing config strings, we
      * always pass down the return arguments for the history store dhandle and checkpoint snapshot
      * information (except for the bulk-only case and the LSM case) and pass the results on to
-     * __curfile_create. We will not get anything back unless we are actually opening a checkpoint
+     * __curblue_create. We will not get anything back unless we are actually opening a checkpoint
      * cursor. The open code takes care of the special case of opening a checkpoint cursor on the
      * history store. (This is not normally done by applications; but it is done by a couple tests,
      * and furthermore any internally opened history store cursors come through here, so this case
@@ -1198,7 +1361,7 @@ __wt_curfile_open(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *owner, c
     WT_RET(ret);
 
     WT_ERR(
-      __curfile_create(session, owner, cfg, bulk, bitmap, hs_dhandle, &ckpt_snapshot, cursorp));
+      __curblue_create(session, owner, cfg, bulk, bitmap, hs_dhandle, &ckpt_snapshot, cursorp));
 
     return (0);
 

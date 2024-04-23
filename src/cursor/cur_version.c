@@ -601,9 +601,13 @@ __wt_curversion_open(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *owner
 {
     WT_CURSOR_STATIC_INIT(iface, __curversion_get_key, /* get-key */
       __curversion_get_value,                          /* get-value */
+      __wt_cursor_get_key_with_vid_notsup,             /* get-key-with-vid */
+      __wt_cursor_get_value_with_vid_notsup,           /* get-value-with-vid */
       __wt_cursor_get_raw_key_value_notsup,            /* get-raw-key-value */
       __curversion_set_key,                            /* set-key */
       __wt_cursor_set_value_notsup,                    /* set-value */
+      __wt_cursor_set_key_with_vid_notsup,             /* set-key-with-vid */
+      __wt_cursor_set_value_with_vid_notsup,           /* set-value-with-vid */
       __wt_cursor_compare_notsup,                      /* compare */
       __wt_cursor_equals_notsup,                       /* equals */
       __curversion_next,                               /* next */

@@ -36,9 +36,13 @@ __wt_curconfig_open(
 {
     WT_CURSOR_STATIC_INIT(iface, __wt_cursor_get_key, /* get-key */
       __wt_cursor_get_value,                          /* get-value */
+      __wt_cursor_get_key_with_vid_notsup,            /* get-key-with-vid */
+      __wt_cursor_get_value_with_vid_notsup,          /* get-value-with-vid */
       __wt_cursor_get_raw_key_value,                  /* get-raw-key-value */
       __wt_cursor_set_key,                            /* set-key */
       __wt_cursor_set_value,                          /* set-value */
+      __wt_cursor_set_key_with_vid_notsup,            /* set-key-with-vid */
+      __wt_cursor_set_value_with_vid_notsup,          /* set-value-with-vid */
       __wt_cursor_compare_notsup,                     /* compare */
       __wt_cursor_equals_notsup,                      /* equals */
       __wt_cursor_notsup,                             /* next */

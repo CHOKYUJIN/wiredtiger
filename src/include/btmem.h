@@ -1285,6 +1285,7 @@ struct __wt_update {
     WT_UPDATE *next; /* forward-linked list */
 
     uint32_t size; /* data length */
+    uint32_t vid_size; /* value ID length */
 
 #define WT_UPDATE_INVALID 0   /* diagnostic check */
 #define WT_UPDATE_MODIFY 1    /* partial-update modify value */
@@ -1325,7 +1326,7 @@ struct __wt_update {
  * WT_UPDATE_SIZE is the expected structure size excluding the payload data -- we verify the build
  * to ensure the compiler hasn't inserted padding.
  */
-#define WT_UPDATE_SIZE 47
+#define WT_UPDATE_SIZE 51
 
 /*
  * The memory size of an update: include some padding because this is such a common case that

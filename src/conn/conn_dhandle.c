@@ -190,7 +190,7 @@ __wt_conn_dhandle_alloc(WT_SESSION_IMPL *session, const char *uri, const char *c
     if ((ret = __wt_conn_dhandle_find(session, uri, checkpoint)) != WT_NOTFOUND)
         return (ret);
 
-    if (WT_PREFIX_MATCH(uri, "file:")) {
+    if (WT_PREFIX_MATCH(uri, "file:") || WT_PREFIX_MATCH(uri, "blue:")) {
         WT_RET(__wt_calloc_one(session, &dhandle));
         dhandle->type = WT_DHANDLE_TYPE_BTREE;
     } else if (WT_PREFIX_MATCH(uri, "table:")) {

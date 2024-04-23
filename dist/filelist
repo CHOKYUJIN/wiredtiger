@@ -89,6 +89,7 @@ src/cursor/cur_config.c
 src/cursor/cur_ds.c
 src/cursor/cur_dump.c
 src/cursor/cur_file.c
+src/cursor/cur_blue.c
 src/cursor/cur_hs.c
 src/cursor/cur_index.c
 src/cursor/cur_join.c

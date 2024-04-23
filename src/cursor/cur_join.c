@@ -561,9 +561,13 @@ __curjoin_entry_member(
     WT_CURSOR *c;
     WT_CURSOR_STATIC_INIT(iface, __wt_cursor_get_key, /* get-key */
       __wt_cursor_get_value,                          /* get-value */
+      __wt_cursor_get_key_with_vid_notsup,            /* get-key-with-vid */
+      __wt_cursor_get_value_with_vid_notsup,          /* get-value-with-vid */
       __wt_cursor_get_raw_key_value,                  /* get-raw-key-value */
       __wt_cursor_set_key,                            /* set-key */
       __wt_cursor_set_value,                          /* set-value */
+      __wt_cursor_set_key_with_vid_notsup,            /* set-key-with-vid */
+      __wt_cursor_set_value_with_vid_notsup,          /* set-value-with-vid */
       __wt_cursor_compare_notsup,                     /* compare */
       __wt_cursor_equals_notsup,                      /* equals */
       __wt_cursor_notsup,                             /* next */
@@ -1211,9 +1215,13 @@ __wt_curjoin_open(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *owner, c
 {
     WT_CURSOR_STATIC_INIT(iface, __curjoin_get_key, /* get-key */
       __curjoin_get_value,                          /* get-value */
+      __wt_cursor_get_key_with_vid_notsup,          /* get-key-with-vid */
+      __wt_cursor_get_value_with_vid_notsup,        /* get-value-with-vid */
       __wt_cursor_get_raw_key_value_notsup,         /* get-raw-key-value */
       __wt_cursor_set_key_notsup,                   /* set-key */
       __wt_cursor_set_value_notsup,                 /* set-value */
+      __wt_cursor_set_key_with_vid_notsup,          /* set-key-with-vid */
+      __wt_cursor_set_value_with_vid_notsup,        /* set-value-with-vid */
       __wt_cursor_compare_notsup,                   /* compare */
       __wt_cursor_equals_notsup,                    /* equals */
       __curjoin_next,                               /* next */

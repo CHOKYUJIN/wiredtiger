@@ -52,7 +52,7 @@
 #define WT_SYSTEM_BASE_WRITE_GEN "base_write_gen"                       /* Base write gen name */
 
 /* Check whether a string is a legal URI for a btree object */
-#define WT_BTREE_PREFIX(str) (WT_PREFIX_MATCH(str, "file:") || WT_PREFIX_MATCH(str, "tiered:"))
+#define WT_BTREE_PREFIX(str) (WT_PREFIX_MATCH(str, "file:") || WT_PREFIX_MATCH(str, "tiered:") || WT_PREFIX_MATCH(str, "blue:"))
 
 /*
  * Optimize comparisons against the metafile URI, flag handles that reference the metadata file.

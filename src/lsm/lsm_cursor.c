@@ -276,7 +276,7 @@ __clsm_leave(WT_CURSOR_LSM *clsm)
  * application-chosen encoding byte, if the application uses two leading DC4 byte for some reason,
  * we'll do a wasted data copy each time a new value is inserted into the object.
  */
-static const WT_ITEM __tombstone = {"\x14\x14", 2, NULL, 0, 0};
+static const WT_ITEM __tombstone = {"\x14\x14", 2, NULL, 0, NULL, 0, 0};
 
 /*
  * __clsm_deleted --
@@ -1682,9 +1682,13 @@ __wt_clsm_open(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *owner, cons
     WT_CONFIG_ITEM cval;
     WT_CURSOR_STATIC_INIT(iface, __wt_cursor_get_key, /* get-key */
       __wt_cursor_get_value,                          /* get-value */
-      __wt_cursor_get_raw_key_value,                  /* get-value */
+      __wt_cursor_get_key_with_vid_notsup,            /* get-key-with-vid */
+      __wt_cursor_get_value_with_vid_notsup,          /* get-value-with-vid */
+      __wt_cursor_get_raw_key_value,                  /* get-raw-key-value */
       __wt_cursor_set_key,                            /* set-key */
       __wt_cursor_set_value,                          /* set-value */
+      __wt_cursor_set_key_with_vid_notsup,            /* set-key-with-vid */
+      __wt_cursor_set_value_with_vid_notsup,          /* set-value-with-vid */
       __clsm_compare,                                 /* compare */
       __wt_cursor_equals,                             /* equals */
       __clsm_next,                                    /* next */

@@ -197,7 +197,7 @@ __checkpoint_name_check(WT_SESSION_IMPL *session, const char *uri)
         WT_RET(__wt_metadata_cursor(session, &cursor));
         while ((ret = cursor->next(cursor)) == 0) {
             WT_ERR(cursor->get_key(cursor, &uri));
-            if (!WT_PREFIX_MATCH(uri, "colgroup:") && !WT_PREFIX_MATCH(uri, "file:") &&
+            if (!WT_PREFIX_MATCH(uri, "colgroup:") && !WT_PREFIX_MATCH(uri, "file:") && !WT_PREFIX_MATCH(uri, "blue:") &&
               !WT_PREFIX_MATCH(uri, "index:") && !WT_PREFIX_MATCH(uri, WT_SYSTEM_PREFIX) &&
               !WT_PREFIX_MATCH(uri, "table:") && !WT_PREFIX_MATCH(uri, "tiered:")) {
                 fail = uri;
@@ -205,7 +205,7 @@ __checkpoint_name_check(WT_SESSION_IMPL *session, const char *uri)
             }
         }
         WT_ERR_NOTFOUND_OK(ret, false);
-    } else if (!WT_PREFIX_MATCH(uri, "colgroup:") && !WT_PREFIX_MATCH(uri, "file:") &&
+    } else if (!WT_PREFIX_MATCH(uri, "colgroup:") && !WT_PREFIX_MATCH(uri, "file:") && !WT_PREFIX_MATCH(uri, "blue:") &&
       !WT_PREFIX_MATCH(uri, "index:") && !WT_PREFIX_MATCH(uri, "table:") &&
       !WT_PREFIX_MATCH(uri, "tiered:"))
         fail = uri;

@@ -1363,7 +1363,7 @@ err:
 int
 __wt_btcur_remove(WT_CURSOR_BTREE *cbt, bool positioned)
 {
-    static const WT_ITEM flcs_zero = {"", 1, NULL, 0, 0};
+    static const WT_ITEM flcs_zero = {"", 1, "", 0, NULL, 0, 0};
 
     WT_BTREE *btree;
     WT_CURFILE_STATE state;
@@ -2371,4 +2371,162 @@ __wt_btcur_bounds_position(
     else
         *need_walkp = true;
     return (0);
+}
+
+/*
+ * __cursor_row_modify_with_vid --
+ *     Row-store modify from a cursor.
+ */
+static inline int
+__cursor_row_modify_with_vid(WT_CURSOR_BTREE *cbt, const WT_ITEM *value, u_int modify_type)
+{
+    return (__wt_row_modify_with_vid(cbt, &cbt->iface.key, value, NULL, modify_type, false, false));
+}
+
+/*
+ * __wt_btcur_insert_with_vid --
+ *     Insert a record whose vid is set into the tree.
+ *     This function Only support BTREE_ROW type and overwrite should be possible because same key can have different version id.
+ */
+int
+__wt_btcur_insert_with_vid(WT_CURSOR_BTREE *cbt)
+{
+    WT_BTREE *btree;
+    WT_CURFILE_STATE state;
+    WT_CURSOR *cursor;
+    WT_DECL_RET;
+    WT_SESSION_IMPL *session;
+    size_t insert_bytes;
+    uint64_t yield_count, sleep_usecs;
+    bool append_key, key_out_of_bounds, valid;
+
+    btree = CUR2BT(cbt);
+    cursor = &cbt->iface;
+    /* TODO: + vid_size ??*/
+    insert_bytes = cursor->key.size + cursor->value.size; 
+    session = CUR2S(cbt);
+    yield_count = sleep_usecs = 0;
+
+    WT_STAT_CONN_DATA_INCR(session, cursor_insert);
+    WT_STAT_CONN_DATA_INCRV(session, cursor_insert_bytes, insert_bytes);
+
+    if(!F_ISSET(cursor, WT_CURSTD_OVERWRITE)) 
+        WT_ERR_MSG(session, WT_ERROR, "cur_blue should be able to overwrite because the same key can have different version ids");
+
+    if (btree->type == BTREE_ROW)
+        WT_RET(__cursor_size_chk(session, &cursor->key));
+    WT_RET(__cursor_size_chk(session, &cursor->value));
+
+    /* It's no longer possible to bulk-load into the tree. */
+    __wt_btree_disable_bulk(session);
+
+    /*
+     * Insert a new record if WT_CURSTD_APPEND configured, (ignoring any application set record
+     * number). Although append can't be configured for a row-store, this code would break if it
+     * were, and that's owned by the upper cursor layer, be cautious.
+     */
+    append_key = F_ISSET(cursor, WT_CURSTD_APPEND) && btree->type != BTREE_ROW;
+
+    /* Save the cursor state. */
+    __cursor_state_save(cursor, &state);
+
+    /*
+     * Check that the provided insert key is within bounds. If not, return WT_NOTFOUND and early
+     * exit.
+     */
+    WT_ERR(__btcur_bounds_contains_key(
+      session, cursor, &cursor->key, cursor->recno, &key_out_of_bounds, NULL));
+    if (key_out_of_bounds)
+        WT_ERR(WT_NOTFOUND);
+
+    /*
+     * If inserting with overwrite configured, and positioned to an on-page key, the update doesn't
+     * require another search. Cursors configured for append aren't included, regardless of whether
+     * or not they meet all other criteria.
+     *
+     * Fixed-length column store can never use a positioned cursor to update because the cursor may
+     * not be positioned to the correct record in the case of implicit records in the append list.
+     * FIXME: it appears that this is no longer true.
+     */
+    if (btree->type != BTREE_COL_FIX && __cursor_page_pinned(cbt, false) &&
+      F_ISSET(cursor, WT_CURSTD_OVERWRITE) && !append_key) {
+        WT_ERR(__wt_txn_autocommit_check(session));
+        /*
+         * The cursor position may not be exact (the cursor's comparison value not equal to zero).
+         * Correct to an exact match so we can update whatever we're pointing at.
+         */
+        cbt->compare = 0;
+        /* TODO: kyu-jin: consider the version id in cursor->key */
+        ret = __cursor_row_modify_with_vid(cbt, &cbt->iface.value, WT_UPDATE_STANDARD);
+        if (ret == 0)
+            goto done;
+
+        /*
+         * The pinned page goes away if we fail for any reason, get a local copy of any pinned key
+         * or value. (Restart could still use the pinned page, but that's an unlikely path.) Re-save
+         * the cursor state: we may retry but eventually fail.
+         */
+        WT_TRET(__wt_cursor_localkey(cursor));
+        WT_TRET(__cursor_localvalue(cursor));
+        __cursor_state_save(cursor, &state);
+        goto err;
+    }
+
+    /*
+     * The pinned page goes away if we do a search, get a local copy of any pinned key or value.
+     * Re-save the cursor state: we may retry but eventually fail.
+     */
+    WT_ERR(__wt_cursor_localkey(cursor));
+    WT_ERR(__cursor_localvalue(cursor));
+    __cursor_state_save(cursor, &state);
+
+retry:
+    WT_ERR(__wt_cursor_func_init(cbt, true));
+
+    if (btree->type == BTREE_ROW) {
+        WT_ERR(__cursor_row_search(cbt, true, NULL, NULL));
+        /*
+         * If not overwriting, fail if the key exists, else insert the key/value pair.
+         */
+        if (!F_ISSET(cursor, WT_CURSTD_OVERWRITE) && cbt->compare == 0) {
+            WT_ERR(__wt_cursor_valid(cbt, &valid, false));
+            if (valid)
+                goto duplicate;
+        }
+
+        ret = __cursor_row_modify_with_vid(cbt, &cbt->iface.value, WT_UPDATE_STANDARD);
+    } else {
+        WT_ERR(WT_ERROR);
+    }
+
+err:
+    if (ret == WT_RESTART) {
+        __cursor_restart(session, &yield_count, &sleep_usecs);
+        goto retry;
+    }
+
+    /* Return the found value for any duplicate key. */
+    if (0) {
+duplicate:
+        if (F_ISSET(cursor, WT_CURSTD_DUP_NO_VALUE))
+            ret = WT_DUPLICATE_KEY;
+        else {
+            __wt_value_return(cbt, cbt->upd_value);
+            if ((ret = __cursor_localvalue(cursor)) == 0)
+                ret = WT_DUPLICATE_KEY;
+        }
+    }
+
+    /* Insert doesn't maintain a position across calls, clear resources. */
+    if (ret == 0) {
+done:
+        F_CLR(cursor, WT_CURSTD_KEY_SET | WT_CURSTD_VALUE_SET);
+        if (append_key)
+            F_SET(cursor, WT_CURSTD_KEY_EXT);
+    }
+    WT_TRET(__cursor_reset(cbt));
+    if (ret != 0 && ret != WT_DUPLICATE_KEY)
+        __cursor_state_restore(cursor, &state);
+
+    return (ret);
 }

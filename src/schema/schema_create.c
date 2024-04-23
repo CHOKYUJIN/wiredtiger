@@ -327,6 +327,197 @@ err:
 }
 
 /*
+ * __create_blue --
+ *     Create a new 'blue:' object.
+ */
+static int
+__create_blue(WT_SESSION_IMPL *session, const char *uri, bool exclusive, const char *config)
+{
+    WT_CONFIG_ITEM cval;
+    WT_DECL_ITEM(buf);
+    WT_DECL_ITEM(val);
+    WT_DECL_RET;
+    const char *filename, **p,
+      *filecfg[] = {WT_CONFIG_BASE(session, file_meta), config, NULL, NULL, NULL, NULL},
+      *filestripped;
+    char *fileconf, *filemeta;
+    uint32_t allocsize;
+    bool against_stable, exists, import, import_repair, is_metadata;
+
+    fileconf = filemeta = NULL;
+    filestripped = NULL;
+    import = F_ISSET(session, WT_SESSION_IMPORT);
+
+    import_repair = false;
+    is_metadata = strcmp(uri, WT_METAFILE_URI) == 0;
+    WT_ERR(__wt_scr_alloc(session, 1024, &buf));
+
+    filename = uri;
+    WT_PREFIX_SKIP_REQUIRED(session, filename, "blue:");
+
+    /* Check if the file already exists. */
+    if (!is_metadata && (ret = __wt_metadata_search(session, uri, &fileconf)) != WT_NOTFOUND) {
+        /*
+         * Regardless of the 'exclusive' flag, we should raise an error if we try to import an
+         * existing URI rather than just silently returning.
+         */
+        if (exclusive || import)
+            WT_TRET(EEXIST);
+        goto err;
+    }
+
+    exists = false;
+    /*
+     * At this moment the uri doesn't exist in the metadata. In scenarios like, the database folder
+     * is copied without a checkpoint into another location and trying to recover from it leads to
+     * that history store file exists on disk but not as part of metadata. As we recreate the
+     * history store file on every restart to ensure that history store file is present. Make sure
+     * to remove the already exist history store file in the directory.
+     */
+    if (strcmp(uri, WT_HS_URI) == 0) {
+        WT_IGNORE_RET(__wt_fs_exist(session, filename, &exists));
+        if (exists)
+            WT_IGNORE_RET(__wt_fs_remove(session, filename, true));
+    }
+
+    /* Sanity check the allocation size. */
+    WT_ERR(__wt_direct_io_size_check(session, filecfg, "allocation_size", &allocsize));
+
+    /*
+     * If we are importing an existing object rather than creating a new one, there are two possible
+     * scenarios. Either (1) the file configuration string from the source database metadata is
+     * specified in the input config string, or (2) the import.repair option is set and we need to
+     * reconstruct the configuration metadata from the file.
+     */
+    if (import) {
+        /*
+         * Create the file for tiered storage. It is required because we switched to a new file
+         * during the import process.
+         */
+        if (WT_SUFFIX_MATCH(filename, ".wtobj")) {
+            if (session->import_list != NULL)
+                WT_ERR(__create_file_block_manager(session, uri, filename, allocsize));
+            else
+                WT_ERR_MSG(session, ENOTSUP,
+                  "%s: import without metadata_file not supported on tiered files", uri);
+        }
+
+        /* First verify that the data to import exists on disk. */
+        WT_IGNORE_RET(__wt_fs_exist(session, filename, &exists));
+        if (!exists)
+            WT_ERR_MSG(session, ENOENT, "%s", uri);
+
+        import_repair =
+          __wt_config_getones(session, config, "import.repair", &cval) == 0 && cval.val != 0;
+        if (!import_repair) {
+            if (__wt_config_getones(session, config, "import.file_metadata", &cval) == 0 &&
+              cval.len != 0) {
+                /*
+                 * The string may be enclosed by delimiters (e.g. braces, quotes, parentheses) to
+                 * avoid configuration string characters acting as separators. Discard the first and
+                 * last characters in this case.
+                 */
+                if (cval.type == WT_CONFIG_ITEM_STRUCT) {
+                    cval.str++;
+                    cval.len -= 2;
+                }
+                WT_ERR(__wt_strndup(session, cval.str, cval.len, &filemeta));
+                /*
+                 * FIXME-WT-7735: Importing a tiered table is not yet allowed.
+                 */
+                if (__wt_config_getones(session, filemeta, "tiered_object", &cval) == 0 &&
+                  cval.val != 0)
+                    WT_ERR_MSG(session, ENOTSUP, "%s: import not supported on tiered files", uri);
+                filecfg[2] = filemeta;
+                /*
+                 * If there is a file metadata provided, reconstruct the incremental backup
+                 * information as the imported file was not part of any backup.
+                 */
+                WT_ERR(__wt_reset_blkmod(session, config, buf));
+                filecfg[3] = buf->mem;
+            } else if (session->import_list == NULL) {
+                /*
+                 * If there is no file metadata provided, the user should be specifying a "repair".
+                 * To prevent mistakes with API usage, we should return an error here rather than
+                 * inferring a repair.
+                 */
+                WT_ERR_MSG(session, EINVAL,
+                  "%s: import requires that 'file_metadata' or 'metadata_file' is specified or the "
+                  "'repair' option is provided",
+                  uri);
+            }
+        }
+    } else
+        /* Create the file. */
+        WT_ERR(__create_file_block_manager(session, uri, filename, allocsize));
+
+    /*
+     * If creating an ordinary file, update the file ID and current version numbers and strip
+     * checkpoint LSN from the extracted metadata. If importing an existing file, incremental backup
+     * information is reconstructed inside import repair or when grabbing file metadata.
+     */
+    if (!is_metadata) {
+        if (!import_repair) {
+            WT_ERR(__wt_scr_alloc(session, 0, &val));
+            WT_ERR(__wt_buf_fmt(session, val,
+              "id=%" PRIu32 ",version=(major=%" PRIu16 ",minor=%" PRIu16 "),checkpoint_lsn=",
+              ++S2C(session)->next_file_id, WT_BTREE_VERSION_MAX.major,
+              WT_BTREE_VERSION_MAX.minor));
+            for (p = filecfg; *p != NULL; ++p)
+                ;
+            *p = val->data;
+            WT_ERR(__wt_config_collapse(session, filecfg, &fileconf));
+        } else {
+            /* Try to recreate the associated metadata from the imported data source. */
+            WT_ERR(__wt_import_repair(session, uri, &fileconf));
+        }
+
+        /* Strip any configuration settings that should not be persisted. */
+        filecfg[1] = fileconf;
+        filecfg[2] = NULL;
+        WT_ERR(__wt_config_tiered_strip(session, filecfg, &filestripped));
+        WT_ERR(__wt_metadata_insert(session, uri, filestripped));
+
+        /*
+         * Ensure that the timestamps in the imported data file are not in the future relative to
+         * the configured global timestamp.
+         */
+        if (session->import_list == NULL && import) {
+            against_stable =
+              __wt_config_getones(session, config, "import.compare_timestamp", &cval) == 0 &&
+              (WT_STRING_MATCH("stable", cval.str, cval.len) ||
+                WT_STRING_MATCH("stable_timestamp", cval.str, cval.len));
+            WT_ERR(__check_imported_ts(session, uri, filestripped, against_stable));
+        }
+    }
+
+    /*
+     * Open the file to check that it was setup correctly. We don't need to pass the configuration,
+     * we just wrote the collapsed configuration into the metadata file, and it's going to be
+     * read/used by underlying functions.
+     *
+     * Turn off bulk-load for imported files.
+     */
+    WT_ERR(__wt_session_get_dhandle(session, uri, NULL, NULL, WT_DHANDLE_EXCLUSIVE));
+
+    if (session->import_list == NULL && import)
+        __wt_btree_disable_bulk(session);
+
+    if (WT_META_TRACKING(session))
+        WT_ERR(__wt_meta_track_handle_lock(session, true));
+    else
+        WT_ERR(__wt_session_release_dhandle(session));
+
+err:
+    __wt_scr_free(session, &buf);
+    __wt_scr_free(session, &val);
+    __wt_free(session, fileconf);
+    __wt_free(session, filemeta);
+    __wt_free(session, filestripped);
+    return (ret);
+}
+
+/*
  * __wt_schema_colgroup_source --
  *     Get the URI of the data source for a column group.
  */
@@ -1427,6 +1618,8 @@ __schema_create(WT_SESSION_IMPL *session, const char *uri, const char *config)
         ret = __create_colgroup(session, uri, exclusive, config);
     else if (WT_PREFIX_MATCH(uri, "file:"))
         ret = __create_file(session, uri, exclusive, config);
+    else if (WT_PREFIX_MATCH(uri, "blue:"))
+        ret = __create_blue(session, uri, exclusive, config);
     else if (WT_PREFIX_MATCH(uri, "lsm:"))
         ret = __wt_lsm_tree_create(session, uri, exclusive, config);
     else if (WT_PREFIX_MATCH(uri, "index:"))

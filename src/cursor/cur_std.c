@@ -74,6 +74,26 @@ __wt_cursor_get_value_notsup(WT_CURSOR *cursor, ...)
 }
 
 /*
+ * __wt_cursor_get_key_with_vid_notsup --
+ *     WT_CURSOR.get_value not-supported.
+ */
+int
+__wt_cursor_get_key_with_vid_notsup(WT_CURSOR *cursor, ...)
+{
+    return (__wt_cursor_notsup(cursor));
+}
+
+/*
+ * __wt_cursor_get_value_with_vid_notsup --
+ *     WT_CURSOR.get_value not-supported.
+ */
+int
+__wt_cursor_get_value_with_vid_notsup(WT_CURSOR *cursor, ...)
+{
+    return (__wt_cursor_notsup(cursor));
+}
+
+/*
  * __wt_cursor_get_raw_key_value_notsup --
  *     WT_CURSOR.get_raw_key_value not-supported.
  */
@@ -101,6 +121,26 @@ __wt_cursor_set_key_notsup(WT_CURSOR *cursor, ...)
  */
 void
 __wt_cursor_set_value_notsup(WT_CURSOR *cursor, ...)
+{
+    WT_IGNORE_RET(__wt_cursor_notsup(cursor));
+}
+
+/*
+ * __wt_cursor_set_key_with_vid_notsup --
+ *     WT_CURSOR.set_key not-supported.
+ */
+void
+__wt_cursor_set_key_with_vid_notsup(WT_CURSOR *cursor, ...)
+{
+    WT_IGNORE_RET(__wt_cursor_notsup(cursor));
+}
+
+/*
+ * __wt_cursor_set_value_with_vid_notsup --
+ *     WT_CURSOR.set_value not-supported.
+ */
+void
+__wt_cursor_set_value_with_vid_notsup(WT_CURSOR *cursor, ...)
 {
     WT_IGNORE_RET(__wt_cursor_notsup(cursor));
 }

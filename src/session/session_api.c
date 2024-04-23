@@ -592,8 +592,11 @@ __session_open_cursor_int(WT_SESSION_IMPL *session, const char *uri, WT_CURSOR *
             WT_RET(__wt_curmetadata_open(session, uri, owner, cfg, cursorp));
         break;
     case 'b':
-        if (WT_PREFIX_MATCH(uri, "backup:"))
+        if (WT_PREFIX_MATCH(uri, "backup:")) {
             WT_RET(__wt_curbackup_open(session, uri, other, cfg, cursorp));
+        } else if (WT_PREFIX_MATCH(uri, "blue:")) {
+            WT_RET(__wt_curblue_open(session, uri, owner, cfg, cursorp));
+        }
         break;
     case 's':
         if (WT_PREFIX_MATCH(uri, "statistics:"))
@@ -723,7 +726,7 @@ __session_open_cursor(WT_SESSION *wt_session, const char *uri, WT_CURSOR *to_dup
         if (to_dup != NULL) {
             uri = to_dup->uri;
             if (!WT_PREFIX_MATCH(uri, "backup:") && !WT_PREFIX_MATCH(uri, "colgroup:") &&
-              !WT_PREFIX_MATCH(uri, "index:") && !WT_PREFIX_MATCH(uri, "file:") &&
+              !WT_PREFIX_MATCH(uri, "index:") && !WT_PREFIX_MATCH(uri, "file:") && !WT_PREFIX_MATCH(uri, "blue:") && 
               !WT_PREFIX_MATCH(uri, "lsm:") && !WT_PREFIX_MATCH(uri, WT_METADATA_URI) &&
               !WT_PREFIX_MATCH(uri, "table:") && !WT_PREFIX_MATCH(uri, "tiered:") &&
               __wt_schema_get_source(session, uri) == NULL)
@@ -919,7 +922,7 @@ __session_create(WT_SESSION *wt_session, const char *uri, const char *config)
      * allow LSM as a valid URI is an invitation to that mistake: nip it in the bud.
      */
     if (!WT_PREFIX_MATCH(uri, "colgroup:") && !WT_PREFIX_MATCH(uri, "index:") &&
-      !WT_PREFIX_MATCH(uri, "table:")) {
+      !WT_PREFIX_MATCH(uri, "table:") && !WT_PREFIX_MATCH(uri, "blue:")) {
         /*
          * We can't disallow type entirely, a configuration string might innocently include it, for
          * example, a dump/load pair. If the underlying type is "file", it's OK ("file" is the
