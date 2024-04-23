@@ -37,6 +37,9 @@ macro(define_wiredtiger_library target type)
         target_compile_options(${target} PRIVATE ${COMPILER_DIAGNOSTIC_C_FLAGS})
     endif()
 
+    # Add debug options for gdb    
+    target_compile_options(${target} PRIVATE -pg -g)
+
     # We want to set the following target properties:
     # OUTPUT_NAME - Generate a library with the name "libwiredtiger[.so|.a". Note this assumes each invocation
     #   of this macro is specifying a unique libwiredtiger target type (e.g 'SHARED', 'STATIC'), multiple declarations
