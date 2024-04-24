@@ -133,7 +133,7 @@ __curblue_set_keyv(WT_CURSOR *cursor, uint64_t flags, va_list ap)
         buf->vid = va_arg(ap, const char *);
         buf->vid_size = strlen(buf->vid) + 1;
     } else {
-        WT_ERR_MSG(session, EINVAL, "cur_blue with version id should only work with u format or S format for debugging");
+        WT_ERR_MSG(session, EINVAL, "cur_blue::set_key_with_vid() should only work with u format or S format for debugging");
     }
 
     if (sz == 0)
@@ -179,9 +179,8 @@ __curblue_set_valuev(WT_CURSOR *cursor, const char *fmt, va_list ap)
     WT_ITEM *buf, *item, tmp;
     WT_SESSION_IMPL *session;
     size_t sz;
-
-    va_list ap_copy;
-
+    const char *str;
+  
     buf = &cursor->value;
     tmp.mem = NULL;
 
@@ -200,15 +199,18 @@ __curblue_set_valuev(WT_CURSOR *cursor, const char *fmt, va_list ap)
         item = va_arg(ap, WT_ITEM *);
         sz = item->size;
         buf->data = item->data;
+        buf->vid = item->vid;
+        buf->vid_size = item->vid_size;
+    } else if (WT_STREQ(fmt, "S")) {
+        str = va_arg(ap, const char *);
+        sz = strlen(str) + 1;
+        buf->data = str;
+        buf->vid = va_arg(ap, const char *);
+        buf->vid_size = strlen(buf->vid) + 1;
     } else {
-        va_copy(ap_copy, ap);
-        ret = __wt_struct_sizev(session, &sz, fmt, ap_copy);
-        va_end(ap_copy);
-        WT_ERR(ret);
-
-        WT_ERR(__wt_buf_initsize(session, buf, sz));
-        WT_ERR(__wt_struct_packv(session, buf->mem, sz, fmt, ap));
+        WT_ERR_MSG(session, EINVAL, "cur_blue::set_value_with_vid() should only work with u format or S format for debugging");
     }
+
     F_SET(cursor, WT_CURSTD_VALUE_EXT);
     buf->size = sz;
 
