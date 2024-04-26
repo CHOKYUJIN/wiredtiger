@@ -2368,6 +2368,8 @@ static inline size_t __wt_strnlen(const char *s, size_t maxlen)
   WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 static inline size_t __wt_update_list_memsize(WT_UPDATE *upd)
   WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
+static inline size_t __wt_update_list_memsize_with_vid(WT_UPDATE *upd)
+  WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 static inline size_t __wt_vsize_int(int64_t x) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 static inline size_t __wt_vsize_negint(uint64_t x) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));
 static inline size_t __wt_vsize_posint(uint64_t x) WT_GCC_FUNC_DECL_ATTRIBUTE((warn_unused_result));

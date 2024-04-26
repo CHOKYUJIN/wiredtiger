@@ -581,7 +581,7 @@ __wt_row_modify_with_vid(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM
                 (upd_arg->type == WT_UPDATE_TOMBSTONE && upd_arg->next != NULL &&
                   upd_arg->next->type == WT_UPDATE_STANDARD && upd_arg->next->next == NULL));
 
-            upd_size = __wt_update_list_memsize(upd);
+            upd_size = __wt_update_list_memsize_with_vid(upd);
 
             /* If there are existing updates, append them after the new updates. */
             for (last_upd = upd; last_upd->next != NULL; last_upd = last_upd->next)
@@ -661,7 +661,7 @@ __wt_row_modify_with_vid(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM
                   upd_arg->next->type == WT_UPDATE_STANDARD && upd_arg->next->next == NULL) ||
                 (upd_arg->type == WT_UPDATE_STANDARD && upd_arg->next == NULL));
 
-            upd_size = __wt_update_list_memsize(upd);
+            upd_size = __wt_update_list_memsize_with_vid(upd);
         }
 
         ins->upd = upd;

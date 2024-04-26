@@ -681,6 +681,21 @@ __wt_update_list_memsize(WT_UPDATE *upd)
 }
 
 /*
+ * __wt_update_list_memsize_with_vid --
+ *     The size in memory of a list of updates.
+ */
+static inline size_t
+__wt_update_list_memsize_with_vid(WT_UPDATE *upd)
+{
+    size_t upd_size;
+
+    for (upd_size = 0; upd != NULL; upd = upd->next)
+        upd_size += WT_UPDATE_MEMSIZE_WITH_VID(upd);
+
+    return (upd_size);
+}
+
+/*
  * __wt_page_modify_init --
  *     A page is about to be modified, allocate the modification structure.
  */

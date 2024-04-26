@@ -1333,6 +1333,7 @@ struct __wt_update {
  * overhead of tiny allocations can swamp our cache overhead calculation.
  */
 #define WT_UPDATE_MEMSIZE(upd) WT_ALIGN(WT_UPDATE_SIZE + (upd)->size, 32)
+#define WT_UPDATE_MEMSIZE_WITH_VID(upd) WT_ALIGN(WT_UPDATE_SIZE + (upd)->size + (upd)->vid_size, 32)
 
 /*
  * WT_UPDATE_VALUE --

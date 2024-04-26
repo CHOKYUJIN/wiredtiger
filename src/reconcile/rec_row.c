@@ -564,15 +564,21 @@ __rec_row_leaf_insert(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_INSERT *ins)
             cbt->slot = UINT32_MAX;
             WT_ERR(__wt_modify_reconstruct_from_upd_list(session, cbt, upd, cbt->upd_value));
             __wt_value_return(cbt, cbt->upd_value);
-            WT_ERR(__wt_rec_cell_build_val(
-              session, r, cbt->iface.value.data, cbt->iface.value.size, &tw, 0));
+            if(upd->vid_size != 0)
+                    ; // TODO: kyu-jin: WT_ERR(__wt_rec_cell_build_val_with_vid(session, r, cbt->iface.value, &tw, 0));
+            else
+                WT_ERR(__wt_rec_cell_build_val(session, r, cbt->iface.value.data, cbt->iface.value.size, &tw, 0));
             break;
         case WT_UPDATE_STANDARD:
             if (upd->size == 0 && WT_TIME_WINDOW_IS_EMPTY(&tw))
                 val->len = 0;
-            else
+            else {
                 /* Take the value from the update. */
-                WT_ERR(__wt_rec_cell_build_val(session, r, upd->data, upd->size, &tw, 0));
+                if(upd->vid_size != 0)
+                    WT_ERR(__wt_rec_cell_build_val_with_vid(session, r, upd, &tw, 0));
+                else
+                    WT_ERR(__wt_rec_cell_build_val(session, r, upd->data, upd->size, &tw, 0));
+            }
             break;
         case WT_UPDATE_TOMBSTONE:
             break;
@@ -622,7 +628,10 @@ __rec_row_leaf_insert(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_INSERT *ins)
             r->all_empty_value = false;
             if (btree->dictionary)
                 WT_ERR(__wt_rec_dict_replace(session, r, &tw, 0, val));
-            __wt_rec_image_copy(session, r, val);
+            if(val->buf.vid_size > 0)
+                __wt_rec_image_copy_with_vid(session, r, val);
+            else 
+                __wt_rec_image_copy(session, r, val);
         }
         WT_TIME_AGGREGATE_UPDATE(session, &r->cur_ptr->ta, &tw);
 
@@ -716,6 +725,7 @@ __wt_rec_row_leaf(
 
     /*
      * Write any K/V pairs inserted into the page before the first from-disk key on the page.
+     * TODO: kyu-jin: Within insert chain, there could be kv pairs with version id.
      */
     if ((ins = WT_SKIP_FIRST(WT_ROW_INSERT_SMALLEST(page))) != NULL)
         WT_RET(__rec_row_leaf_insert(session, r, ins));
@@ -765,6 +775,10 @@ __wt_rec_row_leaf(
         __wt_row_leaf_value_cell(session, page, rip, vpack);
 
         /* Look for an update. */
+        /* 
+         * TODO: kyu-jin: The kv with older version id could not select to be written on disk because there might be no transaction watching it 
+         * but in our case, this kind of kv pairs should also be written on disk, especially on the history store file.
+         */
         WT_ERR(__wt_rec_upd_select(session, r, NULL, rip, vpack, &upd_select));
         upd = upd_select.upd;
 
@@ -782,6 +796,7 @@ __wt_rec_row_leaf(
             upd = &upd_tombstone;
 
         /* Build value cell. */
+        /* TODO: kyu-jin: Even without upd, it should be able to store version id with latest value */
         if (upd == NULL) {
             /* Clear the on-disk cell time window if it is obsolete. */
             __wt_rec_time_window_clear_obsolete(session, NULL, vpack, r);
@@ -850,13 +865,18 @@ __wt_rec_row_leaf(
                 cbt->slot = WT_ROW_SLOT(page, rip);
                 WT_ERR(__wt_modify_reconstruct_from_upd_list(session, cbt, upd, cbt->upd_value));
                 __wt_value_return(cbt, cbt->upd_value);
-                WT_ERR(__wt_rec_cell_build_val(
-                  session, r, cbt->iface.value.data, cbt->iface.value.size, twp, 0));
+                if(upd->vid_size != 0)
+                    ; // TODO: kyu-jin: WT_ERR(__wt_rec_cell_build_val_with_vid(session, r, cbt->iface.value, twp, 0));
+                else
+                    WT_ERR(__wt_rec_cell_build_val(session, r, cbt->iface.value.data, cbt->iface.value.size, twp, 0));
                 dictionary = true;
                 break;
             case WT_UPDATE_STANDARD:
                 /* Take the value from the update. */
-                WT_ERR(__wt_rec_cell_build_val(session, r, upd->data, upd->size, twp, 0));
+                if(upd->vid_size != 0)
+                    WT_ERR(__wt_rec_cell_build_val_with_vid(session, r, upd, twp, 0));
+                else
+                    WT_ERR(__wt_rec_cell_build_val(session, r, upd->data, upd->size, twp, 0));
                 dictionary = true;
                 break;
             case WT_UPDATE_TOMBSTONE:
@@ -998,7 +1018,10 @@ slow:
             r->all_empty_value = false;
             if (dictionary && btree->dictionary)
                 WT_ERR(__wt_rec_dict_replace(session, r, twp, 0, val));
-            __wt_rec_image_copy(session, r, val);
+            if(val->buf.vid_size > 0)
+                __wt_rec_image_copy_with_vid(session, r, val);
+            else 
+                __wt_rec_image_copy(session, r, val);
         }
         WT_TIME_AGGREGATE_UPDATE(session, &r->cur_ptr->ta, twp);
 

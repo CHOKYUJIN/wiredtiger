@@ -265,6 +265,39 @@ __wt_rec_image_copy(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_REC_KV *kv)
 }
 
 /*
+ * __wt_rec_image_copy_with_vid --
+ *     Copy a value cell with vid and buffer pair into the new image.
+ */
+static inline void
+__wt_rec_image_copy_with_vid(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_REC_KV *v)
+{
+    size_t len;
+    uint8_t *p, *t;
+
+    /*
+     * If there's only one chunk of data to copy (because the cell and data are being copied from
+     * the original disk page), the cell length won't be set, the WT_ITEM data/length will reference
+     * the data to be copied.
+     *
+     * WT_CELLs are typically small, 1 or 2 bytes -- don't call memcpy, do the copy in-line.
+     */
+    for (p = r->first_free, t = (uint8_t *)&v->cell, len = v->cell_len; len > 0; --len)
+        *p++ = *t++;
+
+    /* The data can be quite large -- call memcpy. */
+    if (v->buf.size != 0)
+        memcpy(p, v->buf.data, v->buf.size);
+
+    /* The vid can be quite large -- call memcpy. */
+    if (v->buf.vid_size != 0)
+        memcpy(p + v->buf.size, v->buf.vid, v->buf.vid_size);
+
+    /* TODO: kyu-jin: Where does it store cell_len? */    
+    WT_ASSERT(session, v->len == v->cell_len + v->buf.size + v->buf.vid_size);
+    __wt_rec_incr(session, r, 1, v->len);
+}
+
+/*
  * __wt_rec_auxincr --
  *     Update the memory tracking structure for a set of new entries in the auxiliary image.
  */
@@ -417,6 +450,9 @@ __wt_rec_cell_build_val(WT_SESSION_IMPL *session, WT_RECONCILE *r, const void *d
     val->buf.data = data;
     val->buf.size = size;
 
+    val->buf.vid = NULL;
+    val->buf.vid_size = 0;
+
     /* Handle zero-length cells quickly. */
     if (size != 0) {
         /* Optionally compress the data using the Huffman engine. */
@@ -435,6 +471,60 @@ __wt_rec_cell_build_val(WT_SESSION_IMPL *session, WT_RECONCILE *r, const void *d
 
     val->cell_len = __wt_cell_pack_value(session, &val->cell, tw, rle, val->buf.size);
     val->len = val->cell_len + val->buf.size;
+
+    return (0);
+}
+
+/*
+ * __wt_rec_cell_build_val --
+ *     Process a data item and return a WT_CELL structure and byte string to be stored on the page.
+ */
+static inline int
+__wt_rec_cell_build_val_with_vid(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_UPDATE *upd,
+  WT_TIME_WINDOW *tw, uint64_t rle)
+{
+    WT_BTREE *btree;
+    WT_REC_KV *val;
+
+    btree = S2BT(session);
+    val = &r->v;
+
+    /*
+     * Unless necessary we don't copy the data into the buffer; start by just re-pointing the
+     * buffer's data/length fields.
+     */
+    val->buf.data = upd->data;
+    val->buf.size = upd->size;
+
+    val->buf.vid = upd->data + upd->size;
+    val->buf.vid_size = upd->vid_size;
+
+    /* 
+     * TODO: kyu-jin: Add vid info (length, offset after value data, etc.) into WT_REC_KV *val 
+     * One way to do this is, 
+     *          val->len             =     val->cell_len + val->buf.size + val->buf.vid_size
+     *          cell.data_length     =     val->buf.size 
+     *          cell->vid_offset     =     val->cell_len + cell->data_length
+     */
+
+    /* Handle zero-length cells quickly. */
+    if (upd->size != 0) {
+        /* Optionally compress the data using the Huffman engine. */
+        if (btree->huffman_value != NULL)
+            WT_RET(__wt_huffman_encode(session, btree->huffman_value,
+              (const uint8_t *)val->buf.data, (uint32_t)val->buf.size, &val->buf));
+
+        /* Create an overflow object if the data won't fit. */
+        if (val->buf.size > btree->maxleafvalue) {
+            WT_STAT_DATA_INCR(session, rec_overflow_value);
+
+            return (__wt_rec_cell_build_ovfl(session, r, val, WT_CELL_VALUE_OVFL, tw, rle));
+        }
+    }
+    __rec_cell_tw_stats(r, tw);
+
+    val->cell_len = __wt_cell_pack_value(session, &val->cell, tw, rle, val->buf.size + val->buf.vid_size);
+    val->len = val->cell_len + val->buf.size + val->buf.vid_size;
 
     return (0);
 }
