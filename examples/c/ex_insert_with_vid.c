@@ -25,17 +25,15 @@
  * ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR
  * OTHER DEALINGS IN THE SOFTWARE.
  *
- * ex_access.c
- * 	demonstrates how to create and access a simple table.
+ * ex_with_vid.c
+ * 	demonstrates how to use a transaction.
  */
 #include <test_util.h>
 
 static const char *home;
 
 static void
-access_example(void)
-{
-    /*! [access example connection] */
+insert_with_vid_example(void) {
     WT_CONNECTION *conn;
     WT_CURSOR *cursor;
     WT_SESSION *session;
@@ -47,23 +45,35 @@ access_example(void)
 
     /* Open a session handle for the database. */
     error_check(conn->open_session(conn, NULL, NULL, &session));
-    /*! [access example connection] */
+    /*! [transaction example connection] */
 
-    /*! [access example table create] */
-    error_check(session->create(session, "blue:access", "key_format=S,value_format=S"));
-    /*! [access example table create] */
+    /*! [transaction example table create] */
+    error_check(session->create(session, "blue:with_vid", "key_format=S,value_format=S"));
+    /*! [transaction example table create] */
 
-    /*! [access example cursor open] */
-    error_check(session->open_cursor(session, "blue:access", NULL, NULL, &cursor));
-    /*! [access example cursor open] */
+    /*! [transaction example transaction begin] */
+    error_check(session->begin_transaction(session, "isolation=snapshot"));
+    /*! [transaction example transaction begin] */
 
-    /*! [access example cursor insert] */
-    cursor->set_key(cursor, "key1"); /* Insert a record. */
-    cursor->set_value(cursor, "value1");
+    /*! [transaction example cursor open] */
+    error_check(session->open_cursor(session, "blue:with_vid", NULL, NULL, &cursor));
+    /*! [transaction example cursor open] */
+
+    /*! [transaction example cursor insert] */
+    cursor->set_key_with_vid(cursor, "key1", "v1");
+    cursor->set_value_with_vid(cursor, "value01234", "v1");  // 16 characters
     error_check(cursor->insert(cursor));
-    /*! [access example cursor insert] */
 
-    /*! [access example cursor list] */
+    cursor->set_key_with_vid(cursor, "key1", "v2");
+    cursor->set_value_with_vid(cursor, "value56789", "v2");  // 16 characters
+    error_check(cursor->insert(cursor));
+    /*! [transaction example cursor insert] */
+    
+    /*! [transaction example transaction commit] */
+    error_check(session->commit_transaction(session, NULL));
+    /*! [transaction example transaction commit] */
+
+    /*! [transaction example cursor list] */
     error_check(cursor->reset(cursor)); /* Restart the scan. */
     while ((ret = cursor->next(cursor)) == 0) {
         error_check(cursor->get_key(cursor, &key));
@@ -72,11 +82,11 @@ access_example(void)
         printf("Got record: %s : %s\n", key, value);
     }
     scan_end_check(ret == WT_NOTFOUND); /* Check for end-of-table. */
-    /*! [access example cursor list] */
+    /*! [transaction example cursor list] */
 
-    /*! [access example close] */
+    /*! [transaction example close] */
     error_check(conn->close(conn, NULL)); /* Close all handles. */
-                                          /*! [access example close] */
+                                          /*! [transaction example close] */
 }
 
 int
@@ -84,7 +94,7 @@ main(int argc, char *argv[])
 {
     home = example_setup(argc, argv);
 
-    access_example();
+    insert_with_vid_example();
 
     return (EXIT_SUCCESS);
 }

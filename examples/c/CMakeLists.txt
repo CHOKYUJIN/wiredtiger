@@ -181,10 +181,17 @@ define_c_test(
 )
 
 define_c_test(
-    TARGET ex_with_vid
-    SOURCES ex_with_vid.c
-    DIR_NAME ex_with_vid
-    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:ex_with_vid>/WT_HOME>
+    TARGET ex_insert_with_vid
+    SOURCES ex_insert_with_vid.c
+    DIR_NAME ex_insert_with_vid
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:ex_insert_with_vid>/WT_HOME>
+)
+
+define_c_test(
+    TARGET ex_search_with_vid
+    SOURCES ex_search_with_vid.c
+    DIR_NAME ex_insert_with_vid
+    ARGUMENTS -h $<SHELL_PATH:$<TARGET_FILE_DIR:ex_insert_with_vid>/WT_HOME>
 )
 
 if(NOT "${CMAKE_C_COMPILER_ID}" STREQUAL "MSVC")
