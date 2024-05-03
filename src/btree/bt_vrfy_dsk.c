@@ -1166,6 +1166,7 @@ __wt_cell_type_check(uint8_t cell_type, uint8_t dsk_type)
     case WT_CELL_VALUE_COPY:
     case WT_CELL_VALUE_OVFL:
     case WT_CELL_VALUE_SHORT:
+    case WT_CELL_VALUE_WITH_VID:
         if (dsk_type == WT_PAGE_COL_VAR || dsk_type == WT_PAGE_ROW_LEAF)
             return (true);
         break;

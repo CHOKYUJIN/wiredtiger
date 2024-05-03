@@ -245,6 +245,7 @@ __wt_value_return_buf(WT_CURSOR_BTREE *cbt, WT_REF *ref, WT_ITEM *buf, WT_TIME_W
         }
 
         /* Take the value from the original page cell. */
+        /* TODO: kyu-jin: cell to value conversion with vid */
         __wt_row_leaf_value_cell(session, page, rip, &unpack);
         return (__read_page_cell_data_ref_kv(session, page, &unpack, buf, tw));
 
@@ -318,6 +319,11 @@ __wt_value_return(WT_CURSOR_BTREE *cbt, WT_UPDATE_VALUE *upd_value)
     WT_ASSERT(CUR2S(cbt), upd_value->type == WT_UPDATE_STANDARD && !upd_value->skip_buf);
     cursor->value.data = upd_value->buf.data;
     cursor->value.size = upd_value->buf.size;
+
+    if(upd_value->buf.vid_size > 0) {
+        cursor->value.vid = upd_value->buf.vid;
+        cursor->value.vid_size = upd_value->buf.vid_size;
+    }
 
     F_SET(cursor, WT_CURSTD_VALUE_INT);
 }

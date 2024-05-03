@@ -1082,6 +1082,13 @@ __inmem_row_leaf(WT_SESSION_IMPL *session, WT_PAGE *page, bool *preparedp)
                   __wt_txn_tw_start_visible_all(session, &unpack.tw))))
                 __wt_row_leaf_value_set(rip - 1, &unpack);
             break;
+        case WT_CELL_VALUE_WITH_VID:
+            if (!btree->huffman_value &&
+              (WT_TIME_WINDOW_IS_EMPTY(&unpack.tw) ||
+                (!WT_TIME_WINDOW_HAS_STOP(&unpack.tw) &&
+                  __wt_txn_tw_start_visible_all(session, &unpack.tw))))
+                __wt_row_leaf_value_set_with_vid(rip - 1, &unpack);
+            break;
         case WT_CELL_VALUE_OVFL:
             break;
         default:

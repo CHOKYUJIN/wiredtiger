@@ -523,7 +523,8 @@ __wt_rec_cell_build_val_with_vid(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_U
     }
     __rec_cell_tw_stats(r, tw);
 
-    val->cell_len = __wt_cell_pack_value(session, &val->cell, tw, rle, val->buf.size + val->buf.vid_size);
+    /* TODO: kyu-jin */
+    val->cell_len = __wt_cell_pack_value_with_vid(session, &val->cell, tw, rle, val->buf.size + val->buf.vid_size, val->buf.vid_size);
     val->len = val->cell_len + val->buf.size + val->buf.vid_size;
 
     return (0);

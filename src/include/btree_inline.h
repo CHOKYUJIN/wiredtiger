@@ -1064,9 +1064,10 @@ __wt_row_leaf_key_info(WT_PAGE *page, void *copy, WT_IKEY **ikeyp, WT_CELL **cel
      * value cells in the case where the value cell is also simple/short. We use bit 0x03 to mark
      * an encoded on-page key and value pair. The encoding for on-page key/value pairs is:
      *
-     *  13 bits		value's length (8KB)
+     *   5 bits		vid's length (32B)
+     *  10 bits		value's length (1KB)
      *   6 bits		offset of the value's bytes from the end of the key's cell (32B)
-     *  12 bits		key's length (4KB)
+     *  10 bits		key's length (1KB)
      *   6 bits		offset of the key's bytes from the key's cell (32B)
      *   8 bits		key's prefix length (256B, the maximum possible value)
      *  17 bits		offset of the key's cell (128KB)
@@ -1111,24 +1112,47 @@ __wt_row_leaf_key_info(WT_PAGE *page, void *copy, WT_IKEY **ikeyp, WT_CELL **cel
 #define WT_K_DECODE_KEY_CELL_OFFSET(v) (((v)&0x0000007ffffffc) >> 2)
 #define WT_K_ENCODE_KEY_CELL_OFFSET(v) ((uintptr_t)(v) << 2)
 
+//#define WT_KV_FLAG 0x03
+//#define WT_KV_MAX_VALUE_LEN (0x2000 - 1)
+//#define WT_KV_DECODE_VALUE_LEN(v) (((v)&0xfff8000000000000) >> 51)
+//#define WT_KV_ENCODE_VALUE_LEN(v) ((uintptr_t)(v) << 51)
+//#define WT_KV_MAX_VALUE_OFFSET (0x40 - 1)
+//#define WT_KV_DECODE_VALUE_OFFSET(v) (((v)&0x07e00000000000) >> 45)
+//#define WT_KV_ENCODE_VALUE_OFFSET(v) ((uintptr_t)(v) << 45)
+//#define WT_KV_MAX_KEY_LEN (0x1000 - 1)
+//#define WT_KV_DECODE_KEY_LEN(v) (((v)&0x001ffe00000000) >> 33)
+//#define WT_KV_ENCODE_KEY_LEN(v) ((uintptr_t)(v) << 33)
+/* Key offset encoding is the same for key and key/value forms, WT_KV_MAX_KEY_OFFSET not needed. */
+//#define WT_KV_DECODE_KEY_OFFSET(v) (((v)&0x000001f8000000) >> 27)
+//#define WT_KV_ENCODE_KEY_OFFSET(v) ((uintptr_t)(v) << 27)
+/* Key prefix encoding is the same for key and key/value forms, WT_KV_MAX_KEY_PREFIX not needed. */
+//#define WT_KV_DECODE_KEY_PREFIX(v) (((v)&0x00000007f80000) >> 19)
+//#define WT_KV_ENCODE_KEY_PREFIX(v) ((uintptr_t)(v) << 19)
+//#define WT_KV_MAX_KEY_CELL_OFFSET (0x20000 - 1)
+//#define WT_KV_DECODE_KEY_CELL_OFFSET(v) (((v)&0x0000000007fffc) >> 2)
+//#define WT_KV_ENCODE_KEY_CELL_OFFSET(v) ((uintptr_t)(v) << 2)
+
 #define WT_KV_FLAG 0x03
-#define WT_KV_MAX_VALUE_LEN (0x2000 - 1)
-#define WT_KV_DECODE_VALUE_LEN(v) (((v)&0xfff8000000000000) >> 51)
-#define WT_KV_ENCODE_VALUE_LEN(v) ((uintptr_t)(v) << 51)
+#define WT_KV_MAX_VID_LEN (0x20 - 1)
+#define WT_KV_DECODE_VID_LEN(v) (((v)&0xf800000000000000) >> 59)
+#define WT_KV_ENCODE_VID_LEN(v) ((uintptr_t)(v) << 59)
+#define WT_KV_MAX_VALUE_LEN (0x400 - 1)
+#define WT_KV_DECODE_VALUE_LEN(v) (((v)&0x07fe000000000000) >> 49)
+#define WT_KV_ENCODE_VALUE_LEN(v) ((uintptr_t)(v) << 49)
 #define WT_KV_MAX_VALUE_OFFSET (0x40 - 1)
-#define WT_KV_DECODE_VALUE_OFFSET(v) (((v)&0x07e00000000000) >> 45)
-#define WT_KV_ENCODE_VALUE_OFFSET(v) ((uintptr_t)(v) << 45)
-#define WT_KV_MAX_KEY_LEN (0x1000 - 1)
-#define WT_KV_DECODE_KEY_LEN(v) (((v)&0x001ffe00000000) >> 33)
+#define WT_KV_DECODE_VALUE_OFFSET(v) (((v)&0x0001f80000000000) >> 43)
+#define WT_KV_ENCODE_VALUE_OFFSET(v) ((uintptr_t)(v) << 43)
+#define WT_KV_MAX_KEY_LEN (0x400 - 1)
+#define WT_KV_DECODE_KEY_LEN(v) (((v)&0x000007fe00000000) >> 33)
 #define WT_KV_ENCODE_KEY_LEN(v) ((uintptr_t)(v) << 33)
 /* Key offset encoding is the same for key and key/value forms, WT_KV_MAX_KEY_OFFSET not needed. */
-#define WT_KV_DECODE_KEY_OFFSET(v) (((v)&0x000001f8000000) >> 27)
+#define WT_KV_DECODE_KEY_OFFSET(v) (((v)&0x00000001f8000000) >> 27)
 #define WT_KV_ENCODE_KEY_OFFSET(v) ((uintptr_t)(v) << 27)
 /* Key prefix encoding is the same for key and key/value forms, WT_KV_MAX_KEY_PREFIX not needed. */
-#define WT_KV_DECODE_KEY_PREFIX(v) (((v)&0x00000007f80000) >> 19)
+#define WT_KV_DECODE_KEY_PREFIX(v) (((v)&0x0000000007f80000) >> 19)
 #define WT_KV_ENCODE_KEY_PREFIX(v) ((uintptr_t)(v) << 19)
 #define WT_KV_MAX_KEY_CELL_OFFSET (0x20000 - 1)
-#define WT_KV_DECODE_KEY_CELL_OFFSET(v) (((v)&0x0000000007fffc) >> 2)
+#define WT_KV_DECODE_KEY_CELL_OFFSET(v) (((v)&0x000000000007fffc) >> 2)
 #define WT_KV_ENCODE_KEY_CELL_OFFSET(v) ((uintptr_t)(v) << 2)
 
     switch (v & WT_KEY_FLAG_BITS) {
@@ -1252,6 +1276,54 @@ __wt_row_leaf_value_set(WT_ROW *rip, WT_CELL_UNPACK_KV *unpack)
       WT_KV_ENCODE_KEY_OFFSET(WT_K_DECODE_KEY_OFFSET(v)) |
       WT_KV_ENCODE_KEY_LEN(WT_K_DECODE_KEY_LEN(v)) | WT_KV_ENCODE_VALUE_OFFSET(value_offset) |
       WT_KV_ENCODE_VALUE_LEN(value_size) | WT_KV_FLAG;
+    WT_ROW_KEY_SET(rip, v);
+}
+
+/*
+ * __wt_row_leaf_value_set_with_vid --
+ *     Set a WT_ROW to reference an on-page row-store leaf key and value pair, if possible.
+ */
+static inline void
+__wt_row_leaf_value_set_with_vid(WT_ROW *rip, WT_CELL_UNPACK_KV *unpack)
+{
+    uintptr_t value_offset, value_size, vid_size, v;
+
+    /* The row-store key can change underfoot; explicitly take a copy. */
+    v = (uintptr_t)WT_ROW_KEY_COPY(rip);
+
+    /*
+     * See the comment in __wt_row_leaf_key_info for an explanation of the magic.
+     *
+     * Only encoded keys can be upgraded to encoded key/value pairs.
+     */
+    if ((v & WT_KEY_FLAG_BITS) != WT_K_FLAG)
+        return;
+
+    if (WT_K_DECODE_KEY_CELL_OFFSET(v) > WT_KV_MAX_KEY_CELL_OFFSET) /* Key cell offset */
+        return;
+    /*
+     * Not checking the prefix size, the field sizes are the same in both encodings.
+     *
+     * Not checking the key offset, the field sizes are the same in both encodings.
+     */
+    if (WT_K_DECODE_KEY_LEN(v) > WT_KV_MAX_KEY_LEN) /* Key len */
+        return;
+
+    value_offset = (uintptr_t)WT_PTRDIFF(unpack->data, unpack->cell);
+    if (value_offset > WT_KV_MAX_VALUE_OFFSET) /* Value offset */
+        return;
+    value_size = unpack->size;
+    if (value_size > WT_KV_MAX_VALUE_LEN) /* Value length */
+        return;
+    vid_size = unpack->vid_size;
+    if (vid_size > WT_KV_MAX_VID_LEN) /* VID length */
+        return;
+
+    v = WT_KV_ENCODE_KEY_CELL_OFFSET(WT_K_DECODE_KEY_CELL_OFFSET(v)) |
+      WT_KV_ENCODE_KEY_PREFIX(WT_K_DECODE_KEY_PREFIX(v)) |
+      WT_KV_ENCODE_KEY_OFFSET(WT_K_DECODE_KEY_OFFSET(v)) |
+      WT_KV_ENCODE_KEY_LEN(WT_K_DECODE_KEY_LEN(v)) | WT_KV_ENCODE_VALUE_OFFSET(value_offset) |
+      WT_KV_ENCODE_VALUE_LEN(value_size) | WT_KV_ENCODE_VID_LEN(vid_size) | WT_KV_FLAG;
     WT_ROW_KEY_SET(rip, v);
 }
 
@@ -1463,7 +1535,14 @@ __wt_row_leaf_value(WT_PAGE *page, WT_ROW *rip, WT_ITEM *value)
          */
         value->data = (uint8_t *)WT_PAGE_REF_OFFSET(page, WT_KV_DECODE_KEY_CELL_OFFSET(v)) +
           WT_KV_DECODE_KEY_OFFSET(v) + WT_KV_DECODE_KEY_LEN(v) + WT_KV_DECODE_VALUE_OFFSET(v);
-        value->size = WT_KV_DECODE_VALUE_LEN(v);
+        value->size = WT_KV_DECODE_VALUE_LEN(v); // kyu-jin: this is (data size + vid size)
+
+        value->vid_size = WT_KV_DECODE_VID_LEN(v);
+        if(value->vid_size > 0) {
+            value->size -= value->vid_size;
+            value->vid = (uint8_t *)value->data + value->size;
+        }
+        
         return (true);
     }
     return (false);

@@ -275,6 +275,53 @@ __wt_cell_pack_value(
 }
 
 /*
+ * __wt_cell_pack_value_with_vid --
+ *     Set a value item's WT_CELL contents.
+ */
+static inline size_t
+__wt_cell_pack_value_with_vid(
+  WT_SESSION_IMPL *session, WT_CELL *cell, WT_TIME_WINDOW *tw, uint64_t rle, size_t size, size_t vid_size)
+{
+    uint8_t *p;
+    bool validity;
+
+    /* Start building a cell: the descriptor byte starts zero. */
+    p = cell->__chunk;
+    *p = '\0';
+
+    __cell_pack_value_validity(session, &p, tw);
+
+    /*
+     * Short data cells without a validity window or run-length encoding have 6 bits of data length
+     * in the descriptor byte.
+     */
+    validity = (cell->__chunk[0] & WT_CELL_SECOND_DESC) != 0;
+    // if (!validity && rle < 2 && size <= WT_CELL_SHORT_MAX) {
+    //      byte = (uint8_t)size; /* Type + length */
+    //      cell->__chunk[0] = (uint8_t)((byte << WT_CELL_SHORT_SHIFT) | WT_CELL_VALUE_SHORT);
+    //      /* TODO: kyu-jin: pack vid_size into it */
+    // } else {
+        /*
+         * If the size was what prevented us from using a short cell, it's larger than the
+         * adjustment size. Decrement/increment it when packing/unpacking so it takes up less room.
+         */
+        if (!validity && rle < 2) {
+            size -= WT_CELL_SIZE_ADJUST;
+            cell->__chunk[0] |= WT_CELL_VALUE_WITH_VID; /* Type */
+        } else {
+            cell->__chunk[0] |= WT_CELL_VALUE_WITH_VID | WT_CELL_64V;
+            /* RLE */
+            WT_IGNORE_RET(__wt_vpack_uint(&p, 0, rle));
+        }
+        /* Length */
+        WT_IGNORE_RET(__wt_vpack_uint(&p, 0, (uint64_t)size));
+        /* Vid Length */
+        WT_IGNORE_RET(__wt_vpack_uint(&p, 0, (uint64_t)vid_size));
+    // }
+    return (WT_PTRDIFF(p, cell));
+}
+
+/*
  * __wt_cell_pack_value_match --
  *     Return if two value items would have identical WT_CELLs (except for their validity window and
  *     any RLE).
@@ -687,7 +734,7 @@ __wt_cell_unpack_safe(WT_SESSION_IMPL *session, const WT_PAGE_HEADER *dsk, WT_CE
     WT_PAGE_DELETED *page_del;
     WT_TIME_AGGREGATE *ta;
     WT_TIME_WINDOW *tw;
-    uint64_t v;
+    uint64_t v, vid_size;
     const uint8_t *p;
     uint8_t flags;
     bool copy_cell;
@@ -757,6 +804,7 @@ copy_cell_restart:
     unpack->data = NULL;
     unpack->size = 0;
     unpack->__len = 0;
+    unpack->vid_size = 0;
 
     p = (uint8_t *)cell + 1; /* skip cell */
 
@@ -819,6 +867,7 @@ copy_cell_restart:
     case WT_CELL_VALUE_COPY:
     case WT_CELL_VALUE_OVFL:
     case WT_CELL_VALUE_OVFL_RM:
+    case WT_CELL_VALUE_WITH_VID:
         /* Return an error if we're not unpacking a cell of this type. */
         if (unpack_value == NULL)
             return (WT_ERROR);
@@ -942,8 +991,28 @@ copy_cell_restart:
         unpack->data = p;
         unpack->size = (uint32_t)v;
         unpack->__len = WT_PTRDIFF32(p, cell) + unpack->size;
+        unpack->vid_size = 0;
         break;
+    case WT_CELL_VALUE_WITH_VID:
+            /*
+         * The cell is followed by a 4B data length and a chunk of data.
+         */
+        WT_RET(__wt_vunpack_uint(&p, end == NULL ? 0 : WT_PTRDIFF(end, p), &v));
+        WT_RET(__wt_vunpack_uint(&p, end == NULL ? 0 : WT_PTRDIFF(end, p), &vid_size));
+        /*
+         * If the size was what prevented us from using a short cell, it's larger than the
+         * adjustment size. Decrement/increment it when packing/unpacking so it takes up less room.
+         */
+        if ((unpack->raw == WT_CELL_VALUE_WITH_VID && unpack->v == 0 && (cell->__chunk[0] & WT_CELL_SECOND_DESC) == 0))
+            v += WT_CELL_SIZE_ADJUST;
 
+        unpack->data = p;
+        unpack->size = (uint32_t)v;
+        unpack->vid_size = vid_size;
+        if(vid_size > 0)
+            unpack->size = unpack->size - vid_size;
+        unpack->__len = WT_PTRDIFF32(p, cell) + unpack->size + unpack->vid_size; // TODO: kyu-jin: (+ unpack->vid_size)?
+        break;
     case WT_CELL_DEL:
         unpack->__len = WT_PTRDIFF32(p, cell);
         break;
@@ -1187,6 +1256,7 @@ __wt_cell_unpack_kv(WT_SESSION_IMPL *session, const WT_PAGE_HEADER *dsk, WT_CELL
         unpack_value->prefix = 0;
         unpack_value->raw = unpack_value->type = WT_CELL_VALUE;
         unpack_value->flags = 0;
+        unpack_value->vid_size = 0;
 
         /*
          * If there isn't any value validity window (which is what it will take to get to a

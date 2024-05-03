@@ -117,6 +117,7 @@
 #define WT_CELL_VALUE_COPY (9 << 4)     /* Value copy */
 #define WT_CELL_VALUE_OVFL (10 << 4)    /* Overflow value */
 #define WT_CELL_VALUE_OVFL_RM (11 << 4) /* Overflow value (removed) */
+#define WT_CELL_VALUE_WITH_VID (13 << 4)/* Value with vid */
 
 #define WT_CELL_TYPE_MASK (0x0fU << 4) /* Maximum 16 cell types */
 #define WT_CELL_TYPE(v) ((v)&WT_CELL_TYPE_MASK)
@@ -175,6 +176,7 @@ struct __wt_cell {
      */                                                                                         \
     const void *data; /* Data */                                                                \
     uint32_t size;    /* Data size */                                                           \
+    uint32_t vid_size;                                                                          \
                                                                                                 \
     uint32_t __len; /* Cell + data length (usually) */                                          \
                                                                                                 \

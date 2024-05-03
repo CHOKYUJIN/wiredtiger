@@ -1085,6 +1085,9 @@ retry:
         WT_ASSERT(session, !WT_IS_HS(session->dhandle));
         cbt->upd_value->buf.data = restored_upd->data;
         cbt->upd_value->buf.size = restored_upd->size;
+        /* TODO: kyu-jin: it should be key/value from history store. 
+         * we should restore vid either later. 
+         */
     } else {
         /*
          * When we inspected the update list we may have seen a tombstone leaving us with a valid
@@ -1667,6 +1670,10 @@ __wt_upd_value_assign(WT_UPDATE_VALUE *upd_value, WT_UPDATE *upd)
     if (!upd_value->skip_buf) {
         upd_value->buf.data = upd->data;
         upd_value->buf.size = upd->size;
+        if(upd->vid_size > 0) {
+            upd_value->buf.vid = (upd->data + upd->size);
+            upd_value->buf.vid_size = upd->vid_size;
+        }
     }
     if (upd->type == WT_UPDATE_TOMBSTONE) {
         upd_value->tw.durable_stop_ts = upd->durable_ts;
