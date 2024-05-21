@@ -33,11 +33,11 @@
 static const char *home;
 
 static void
-insert_with_vid_example(void) {
+insert_u_with_vid_example(void) {
     WT_CONNECTION *conn;
     WT_CURSOR *cursor;
     WT_SESSION *session;
-    const char *key, *value;
+    WT_ITEM key, value;
     int ret;
 
     /* Open a connection to the database, creating it if necessary. */
@@ -48,7 +48,7 @@ insert_with_vid_example(void) {
     /*! [transaction example connection] */
 
     /*! [transaction example table create] */
-    error_check(session->create(session, "blue:with_vid", "key_format=S,value_format=S"));
+    error_check(session->create(session, "blue:with_vid", "key_format=u,value_format=u"));
     /*! [transaction example table create] */
 
     /*! [transaction example transaction begin] */
@@ -60,12 +60,30 @@ insert_with_vid_example(void) {
     /*! [transaction example cursor open] */
 
     /*! [transaction example cursor insert] */
-    cursor->set_key_with_vid(cursor, "key1", "v1");
-    cursor->set_value_with_vid(cursor, "value01234", "v1");  // 16 characters
+    key.data = "key1";
+    key.size = strlen(key.data) + 1;
+    key.vid = "v1";
+    key.vid_size = strlen(key.vid) + 1;
+    cursor->set_key_with_vid(cursor, &key);  
+
+    value.data = "value01234";
+    value.size = strlen(value.data) + 1;
+    value.vid = "v1";
+    value.vid_size = strlen(value.vid) + 1;
+    cursor->set_value_with_vid(cursor, &value);  // 16 characters
     error_check(cursor->insert(cursor));
 
-    cursor->set_key_with_vid(cursor, "key1", "v2");
-    cursor->set_value_with_vid(cursor, "value56789", "v2");  // 16 characters
+    key.data = "key1";
+    key.size = strlen(key.data) + 1;
+    key.vid = "v2";
+    key.vid_size = strlen(key.vid) + 1;
+    cursor->set_key_with_vid(cursor, &key);  
+
+    value.data = "value56789";
+    value.size = strlen(value.data) + 1;
+    value.vid = "v2";
+    value.vid_size = strlen(value.vid) + 1;
+    cursor->set_value_with_vid(cursor, &value);  // 16 characters
     error_check(cursor->insert(cursor));
     /*! [transaction example cursor insert] */
     
@@ -79,7 +97,7 @@ insert_with_vid_example(void) {
         error_check(cursor->get_key(cursor, &key));
         error_check(cursor->get_value(cursor, &value));
 
-        printf("Got record: %s : %s\n", key, value);
+        printf("Got record: %s : %s\n", (const char*)key.data, (const char*)value.data);
     }
     scan_end_check(ret == WT_NOTFOUND); /* Check for end-of-table. */
     /*! [transaction example cursor list] */
@@ -94,7 +112,7 @@ main(int argc, char *argv[])
 {
     home = example_setup(argc, argv);
 
-    insert_with_vid_example();
+    insert_u_with_vid_example();
 
     return (EXIT_SUCCESS);
 }

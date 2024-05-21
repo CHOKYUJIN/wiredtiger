@@ -37,7 +37,8 @@ search_with_vid_example(void) {
     WT_CONNECTION *conn;
     WT_CURSOR *cursor;
     WT_SESSION *session;
-    const char *key, *value;
+    // const char *key, *value;
+    WT_ITEM key, value;
     int ret;
 
     /* Open a connection to the database, creating it if necessary. */
@@ -55,7 +56,7 @@ search_with_vid_example(void) {
         error_check(cursor->get_key(cursor, &key));
         error_check(cursor->get_value(cursor, &value));
 
-        printf("Got record: %s : %s\n", key, value);
+        printf("Got record: %s : %s\n", (const char*)key.data, (const char*)value.data);
     }
     scan_end_check(ret == WT_NOTFOUND); /* Check for end-of-table. */
     /*! [transaction example cursor list] */
