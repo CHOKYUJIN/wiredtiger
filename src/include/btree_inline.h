@@ -1539,7 +1539,7 @@ __wt_row_leaf_value(WT_PAGE *page, WT_ROW *rip, WT_ITEM *value)
 
         value->vid_size = WT_KV_DECODE_VID_LEN(v);
         if(value->vid_size > 0) {
-            value->size -= value->vid_size;
+            // value->size -= value->vid_size;
             value->vid = (uint8_t *)value->data + value->size;
         }
         

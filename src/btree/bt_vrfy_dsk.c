@@ -621,6 +621,7 @@ __verify_dsk_row_leaf(WT_VERIFY_INFO *vi)
             break;
         case WT_CELL_VALUE:
         case WT_CELL_VALUE_OVFL:
+        case WT_CELL_VALUE_WITH_VID:
             switch (last_cell_type) {
             case FIRST:
                 WT_ERR_VRFY(vi->session, vi->flags, "page at %s begins with a value", vi->tag);
@@ -639,6 +640,7 @@ __verify_dsk_row_leaf(WT_VERIFY_INFO *vi)
         switch (cell_type) {
         case WT_CELL_VALUE:
         case WT_CELL_VALUE_OVFL:
+        case WT_CELL_VALUE_WITH_VID:
             WT_ERR(__verify_dsk_value_validity(unpack, vi));
             break;
         }

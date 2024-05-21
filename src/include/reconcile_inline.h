@@ -472,6 +472,8 @@ __wt_rec_cell_build_val(WT_SESSION_IMPL *session, WT_RECONCILE *r, const void *d
     val->cell_len = __wt_cell_pack_value(session, &val->cell, tw, rle, val->buf.size);
     val->len = val->cell_len + val->buf.size;
 
+    // printf("len: %lu, cell_len: %lu, val->buf.size: %lu\n", val->len, val->cell_len, val->buf.size);
+
     return (0);
 }
 
@@ -527,6 +529,7 @@ __wt_rec_cell_build_val_with_vid(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_U
     val->cell_len = __wt_cell_pack_value_with_vid(session, &val->cell, tw, rle, val->buf.size + val->buf.vid_size, val->buf.vid_size);
     val->len = val->cell_len + val->buf.size + val->buf.vid_size;
 
+    // printf("len: %lu, cell_len: %lu, val->buf.size: %lu, val->buf.vid_size: %lu\n", val->len, val->cell_len, val->buf.size, val->buf.vid_size);
     return (0);
 }
 

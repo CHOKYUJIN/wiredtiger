@@ -296,28 +296,23 @@ __wt_cell_pack_value_with_vid(
      * in the descriptor byte.
      */
     validity = (cell->__chunk[0] & WT_CELL_SECOND_DESC) != 0;
-    // if (!validity && rle < 2 && size <= WT_CELL_SHORT_MAX) {
-    //      byte = (uint8_t)size; /* Type + length */
-    //      cell->__chunk[0] = (uint8_t)((byte << WT_CELL_SHORT_SHIFT) | WT_CELL_VALUE_SHORT);
-    //      /* TODO: kyu-jin: pack vid_size into it */
-    // } else {
-        /*
-         * If the size was what prevented us from using a short cell, it's larger than the
-         * adjustment size. Decrement/increment it when packing/unpacking so it takes up less room.
-         */
-        if (!validity && rle < 2) {
-            size -= WT_CELL_SIZE_ADJUST;
-            cell->__chunk[0] |= WT_CELL_VALUE_WITH_VID; /* Type */
-        } else {
-            cell->__chunk[0] |= WT_CELL_VALUE_WITH_VID | WT_CELL_64V;
-            /* RLE */
-            WT_IGNORE_RET(__wt_vpack_uint(&p, 0, rle));
-        }
-        /* Length */
-        WT_IGNORE_RET(__wt_vpack_uint(&p, 0, (uint64_t)size));
-        /* Vid Length */
-        WT_IGNORE_RET(__wt_vpack_uint(&p, 0, (uint64_t)vid_size));
-    // }
+    /*
+     * If the size was what prevented us from using a short cell, it's larger than the
+     * adjustment size. Decrement/increment it when packing/unpacking so it takes up less room.
+     */
+    if (!validity && rle < 2) {
+        size -= WT_CELL_SIZE_ADJUST;
+        cell->__chunk[0] |= WT_CELL_VALUE_WITH_VID; /* Type */
+    } else {
+        cell->__chunk[0] |= WT_CELL_VALUE_WITH_VID | WT_CELL_64V;
+        /* RLE */
+        WT_IGNORE_RET(__wt_vpack_uint(&p, 0, rle));
+    }
+    /* Length */
+    WT_IGNORE_RET(__wt_vpack_uint(&p, 0, (uint64_t)size));
+    /* Vid Length */
+    WT_IGNORE_RET(__wt_vpack_uint(&p, 0, (uint64_t)vid_size));
+
     return (WT_PTRDIFF(p, cell));
 }
 
@@ -1299,6 +1294,13 @@ __cell_data_ref(WT_SESSION_IMPL *session, WT_PAGE *page, int page_type,
         store->size = unpack->size;
         huffman = btree->huffman_value;
         break;
+    case WT_CELL_VALUE_WITH_VID:
+        store->data = unpack->data;
+        store->size = unpack->size;
+        store->vid = (char *)unpack->data + unpack->size;
+        store->vid_size = unpack->vid_size; 
+        huffman = btree->huffman_value;
+        break;  
     case WT_CELL_KEY_OVFL:
         WT_RET(__wt_ovfl_read(session, page, unpack, store, &decoded));
         if (page_type == WT_PAGE_ROW_INT || decoded)

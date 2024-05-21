@@ -514,7 +514,6 @@ __rec_row_leaf_insert(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_INSERT *ins)
     val = &r->v;
 
     upd = NULL;
-
     /* Temporary buffer in which to instantiate any uninstantiated keys or value items we need. */
     WT_RET(__wt_scr_alloc(session, 0, &tmpkey));
 
@@ -565,7 +564,7 @@ __rec_row_leaf_insert(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_INSERT *ins)
             WT_ERR(__wt_modify_reconstruct_from_upd_list(session, cbt, upd, cbt->upd_value));
             __wt_value_return(cbt, cbt->upd_value);
             if(upd->vid_size != 0)
-                    ; // TODO: kyu-jin: WT_ERR(__wt_rec_cell_build_val_with_vid(session, r, cbt->iface.value, &tw, 0));
+                    printf("WT_MODIFY: Insert\n"); // TODO: kyu-jin: WT_ERR(__wt_rec_cell_build_val_with_vid(session, r, cbt->iface.value, &tw, 0));
             else
                 WT_ERR(__wt_rec_cell_build_val(session, r, cbt->iface.value.data, cbt->iface.value.size, &tw, 0));
             break;
@@ -606,6 +605,7 @@ __rec_row_leaf_insert(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_INSERT *ins)
 
         /* Boundary: split or write the page. */
         if (__wt_rec_need_split(r, key->len + val->len)) {
+            // printf("__wt_rec_need_split\n");
             /*
              * Turn off prefix compression until a full key written to the new page, and (unless
              * already working with an overflow key), rebuild the key without compression.
@@ -669,6 +669,40 @@ __rec_cell_repack(WT_SESSION_IMPL *session, WT_BTREE *btree, WT_RECONCILE *r,
         p = tmpval->data;
         size = tmpval->size;
     }
+    WT_ERR(__wt_rec_cell_build_val(session, r, p, size, tw, 0));
+
+err:
+    __wt_scr_free(session, &tmpval);
+    return (ret);
+}
+
+/*
+ * __rec_cell_repack_with_vid --
+ *     Repack a cell.
+ */
+static inline int
+__rec_cell_repack_with_vid(WT_SESSION_IMPL *session, WT_BTREE *btree, WT_RECONCILE *r,
+  WT_CELL_UNPACK_KV *vpack, WT_TIME_WINDOW *tw)
+{
+    WT_DECL_ITEM(tmpval);
+    WT_DECL_RET;
+    size_t size;
+    const void *p;
+
+    WT_ERR(__wt_scr_alloc(session, 0, &tmpval));
+
+    /* If the item is Huffman encoded, decode it. */
+    if (btree->huffman_value == NULL) {
+        p = vpack->data;
+        size = vpack->size;
+    } else {
+        WT_ERR(
+          __wt_huffman_decode(session, btree->huffman_value, vpack->data, vpack->size, tmpval));
+        p = tmpval->data;
+        size = tmpval->size;
+    }
+    /* TODO: kyu-jin: __wt_rec_cell_build_val_with_vid */
+    // WT_ERR(__wt_rec_cell_build_val_with_vid(session, r, p, size, tw, 0));
     WT_ERR(__wt_rec_cell_build_val(session, r, p, size, tw, 0));
 
 err:
@@ -833,11 +867,16 @@ __wt_rec_row_leaf(
                     WT_ERR(__rec_cell_repack(session, btree, r, vpack, twp));
 
                 dictionary = true;
+            } else if (vpack->raw == WT_CELL_VALUE_WITH_VID) {
+                WT_ERR(__rec_cell_repack_with_vid(session, btree, r, vpack, twp));
             } else {
                 val->buf.data = vpack->cell;
                 val->buf.size = __wt_cell_total_len(vpack);
                 val->cell_len = 0;
                 val->len = val->buf.size;
+
+                val->buf.vid = NULL;
+                val->buf.vid_size = 0;
 
                 /* Track if page has overflow items. */
                 if (F_ISSET(vpack, WT_CELL_UNPACK_OVERFLOW))
@@ -866,7 +905,7 @@ __wt_rec_row_leaf(
                 WT_ERR(__wt_modify_reconstruct_from_upd_list(session, cbt, upd, cbt->upd_value));
                 __wt_value_return(cbt, cbt->upd_value);
                 if(upd->vid_size != 0)
-                    ; // TODO: kyu-jin: WT_ERR(__wt_rec_cell_build_val_with_vid(session, r, cbt->iface.value, twp, 0));
+                    printf("WT_MODIFY: upd->vid_size > 0\n"); // TODO: kyu-jin: WT_ERR(__wt_rec_cell_build_val_with_vid(session, r, cbt->iface.value, twp, 0));
                 else
                     WT_ERR(__wt_rec_cell_build_val(session, r, cbt->iface.value.data, cbt->iface.value.size, twp, 0));
                 dictionary = true;

@@ -1125,6 +1125,7 @@ __verify_page_content_leaf(
         case WT_CELL_VALUE:
         case WT_CELL_VALUE_COPY:
         case WT_CELL_VALUE_OVFL:
+        case WT_CELL_VALUE_WITH_VID:
         case WT_CELL_VALUE_SHORT:
             if ((ret = __wt_time_value_validate(session, tw, &parent->ta, false)) != 0)
                 WT_RET_MSG(session, ret,
@@ -1139,7 +1140,7 @@ __verify_page_content_leaf(
 
         /* Verify key-associated history-store entries. */
         if (page->type == WT_PAGE_ROW_LEAF) {
-            if (unpack.type != WT_CELL_VALUE && unpack.type != WT_CELL_VALUE_COPY &&
+            if (unpack.type != WT_CELL_VALUE && unpack.type != WT_CELL_VALUE_WITH_VID && unpack.type != WT_CELL_VALUE_COPY &&
               unpack.type != WT_CELL_VALUE_OVFL && unpack.type != WT_CELL_VALUE_SHORT)
                 continue;
 

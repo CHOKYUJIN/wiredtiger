@@ -73,6 +73,8 @@ __wt_cell_type_string(uint8_t type)
         return ("value/ovfl,rm");
     case WT_CELL_VALUE_SHORT:
         return ("value/short");
+    case WT_CELL_VALUE_WITH_VID:
+        return ("value/with_vid");
     default:
         return ("unknown");
     }

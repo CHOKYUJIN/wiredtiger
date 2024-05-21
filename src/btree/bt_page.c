@@ -957,6 +957,7 @@ __inmem_row_leaf_entries(WT_SESSION_IMPL *session, const WT_PAGE_HEADER *dsk, ui
             break;
         case WT_CELL_VALUE:
         case WT_CELL_VALUE_OVFL:
+        case WT_CELL_VALUE_WITH_VID:
             break;
         default:
             return (__wt_illegal_value(session, unpack.type));
