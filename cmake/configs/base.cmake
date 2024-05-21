@@ -274,7 +274,7 @@ config_bool(
 config_bool(
     ENABLE_TCMALLOC
     "Use TCMalloc as the backend allocator"
-    DEFAULT ${default_enable_tcmalloc}
+    DEFAULT OFF 
     DEPENDS "HAVE_LIBTCMALLOC"
     # Specifically throw a fatal error if a user tries to enable the tcmalloc allocator without
     # actually having the library available (as opposed to silently defaulting to OFF).
