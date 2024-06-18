@@ -1006,7 +1006,7 @@ copy_cell_restart:
         unpack->vid_size = vid_size;
         if(vid_size > 0)
             unpack->size = unpack->size - vid_size;
-        unpack->__len = WT_PTRDIFF32(p, cell) + unpack->size + unpack->vid_size; // TODO: kyu-jin: (+ unpack->vid_size)?
+        unpack->__len = WT_PTRDIFF32(p, cell) + unpack->size + unpack->vid_size;
         break;
     case WT_CELL_DEL:
         unpack->__len = WT_PTRDIFF32(p, cell);

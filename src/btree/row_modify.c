@@ -468,7 +468,7 @@ __wt_upd_alloc_with_vid(WT_SESSION_IMPL *session, const WT_ITEM *key, const WT_I
     WT_RET(__wt_calloc(session, 1, WT_UPDATE_SIZE + (value == NULL ? 0 : value->size) + key->vid_size, &upd));
     if (value != NULL && value->size != 0) {
         upd->size = WT_STORE_SIZE(value->size);
-        memcpy(upd->data, value->data, value->size); /* TODO: kyu-jin: value->size + vid_size for reconciliation? */
+        memcpy(upd->data, value->data, value->size);
         /* Copy version id after the value data */
         upd->vid_size = WT_STORE_SIZE(key->vid_size);
         memcpy(upd->data + upd->size, key->vid, key->vid_size);
@@ -549,7 +549,7 @@ __wt_row_modify_with_vid(WT_CURSOR_BTREE *cbt, const WT_ITEM *key, const WT_ITEM
         } else
             upd_entry = &cbt->ins->upd;
 
-        /* TODO: kyu-jin: make update with version id */
+        /* kyu-jin: make update with version id */
         if (upd_arg == NULL) {
             /* Make sure the modify can proceed. */
             WT_ERR(

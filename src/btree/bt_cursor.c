@@ -2456,7 +2456,7 @@ __wt_btcur_insert_with_vid(WT_CURSOR_BTREE *cbt)
          * Correct to an exact match so we can update whatever we're pointing at.
          */
         cbt->compare = 0;
-        /* TODO: kyu-jin: consider the version id in cursor->key */
+        /* kyu-jin: consider the version id in cursor->key */
         ret = __cursor_row_modify_with_vid(cbt, &cbt->iface.value, WT_UPDATE_STANDARD);
         if (ret == 0)
             goto done;

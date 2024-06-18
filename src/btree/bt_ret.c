@@ -245,7 +245,7 @@ __wt_value_return_buf(WT_CURSOR_BTREE *cbt, WT_REF *ref, WT_ITEM *buf, WT_TIME_W
         }
 
         /* Take the value from the original page cell. */
-        /* TODO: kyu-jin: cell to value conversion with vid */
+        /* kyu-jin: cell to value conversion with vid */
         __wt_row_leaf_value_cell(session, page, rip, &unpack);
         return (__read_page_cell_data_ref_kv(session, page, &unpack, buf, tw));
 
