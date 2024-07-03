@@ -233,8 +233,11 @@ __hs_insert_record(WT_SESSION_IMPL *session, WT_CURSOR *cursor, WT_BTREE *btree,
 
     /* Insert the new record now. */
     cursor->set_key(cursor, 4, btree->id, key, tw->start_ts, counter);
-    cursor->set_value(
-      cursor, tw, tw->durable_stop_ts, tw->durable_start_ts, (uint64_t)type, hs_value);
+    if(hs_value->vid_size != 0)
+        cursor->set_value_with_vid(cursor, tw, tw->durable_stop_ts, tw->durable_start_ts, (uint64_t)type, hs_value);
+    else {
+        cursor->set_value(cursor, tw, tw->durable_stop_ts, tw->durable_start_ts, (uint64_t)type, hs_value);
+    }
     WT_ERR(cursor->insert(cursor));
 
 err:
@@ -271,12 +274,17 @@ __hs_next_upd_full_value(WT_SESSION_IMPL *session, WT_UPDATE_VECTOR *updates,
         full_value->data = upd->data;
         full_value->size = upd->size;
     } else if (upd->type == WT_UPDATE_MODIFY) {
+        /* TODO: kyu-jin: may need to consider vid */
         WT_RET(__wt_buf_set(session, full_value, older_full_value->data, older_full_value->size));
         WT_RET(__wt_modify_apply_item(session, S2BT(session)->value_format, full_value, upd->data));
     } else {
         WT_ASSERT(session, upd->type == WT_UPDATE_STANDARD);
         full_value->data = upd->data;
         full_value->size = upd->size;
+        if(upd->vid_size != 0) {
+            full_value->vid = (uint8_t *)upd->data + upd->size;
+            full_value->vid_size = upd->vid_size;
+        }
     }
 
     *updp = upd;
@@ -501,25 +509,30 @@ __wt_hs_insert_updates(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_MULTI *mult
                         ++cache_hs_write_squash;
                         squashed = false;
                     }
-                } else if (upd != ref_upd)
+                } else if (upd != list->onpage_upd && upd->vid_size != 0)
+                    newest_hs = upd; 
+                else if (upd != ref_upd)
                     squashed = true;
             }
 
             prev_upd = upd;
 
-            /*
-             * No need to continue if we found a first self contained value that is globally
-             * visible.
-             */
-            if (__wt_txn_upd_visible_all(session, upd) && WT_UPDATE_DATA_VALUE(upd))
-                break;
+            // TODO: kyu-jin: This kind of implementation cannot support turn on/off the S3 bucket dynamically
+            if (upd->vid_size == 0) {
+                /*
+                * No need to continue if we found a first self contained value that is globally
+                * visible.
+                */
+                if (__wt_txn_upd_visible_all(session, upd) && WT_UPDATE_DATA_VALUE(upd))
+                    break;
 
-            /*
-             * If we've reached a full update and it's in the history store we don't need to
-             * continue as anything beyond this point won't help with calculating deltas.
-             */
-            if (upd->type == WT_UPDATE_STANDARD && F_ISSET(upd, WT_UPDATE_HS))
-                break;
+                /*
+                * If we've reached a full update and it's in the history store we don't need to
+                * continue as anything beyond this point won't help with calculating deltas.
+                */
+                if (upd->type == WT_UPDATE_STANDARD && F_ISSET(upd, WT_UPDATE_HS))
+                    break;
+            }
 
             /*
              * Save the first update without a timestamp in the update chain. This is used to remove
@@ -575,7 +588,9 @@ __wt_hs_insert_updates(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_MULTI *mult
         for (;; tmp = full_value, full_value = prev_full_value, prev_full_value = tmp,
                 upd = prev_upd) {
             /* We should never insert the onpage value to the history store. */
-            WT_ASSERT(session, upd != list->onpage_upd);
+            // WT_ASSERT(session, upd != list->onpage_upd);
+            if(upd == list->onpage_upd)
+                break;
             WT_ASSERT(session, upd->type == WT_UPDATE_STANDARD || upd->type == WT_UPDATE_MODIFY);
             /* We should never insert prepared updates to the history store. */
             WT_ASSERT(session, upd->prepare_state != WT_PREPARE_INPROGRESS);
@@ -642,7 +657,8 @@ __wt_hs_insert_updates(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_MULTI *mult
               __hs_next_upd_full_value(session, &updates, full_value, prev_full_value, &prev_upd));
 
             /* Squash the updates from the same transaction. */
-            if (upd->start_ts == prev_upd->start_ts && upd->txnid == prev_upd->txnid) {
+            // TODO: kyu-jin: This kind of implementation cannot support turn on/off the S3 bucket dynamically
+            if (upd->vid_size == 0 && upd->start_ts == prev_upd->start_ts && upd->txnid == prev_upd->txnid) {
                 squashed = true;
                 continue;
             }

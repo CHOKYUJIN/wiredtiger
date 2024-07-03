@@ -918,10 +918,14 @@ __wt_upd_alloc(WT_SESSION_IMPL *session, const WT_ITEM *value, u_int modify_type
      *    WT_UPDATE.prepare_state = WT_PREPARE_INIT;
      *    WT_UPDATE.flags = 0;
      */
-    WT_RET(__wt_calloc(session, 1, WT_UPDATE_SIZE + (value == NULL ? 0 : value->size), &upd));
+    WT_RET(__wt_calloc(session, 1, WT_UPDATE_SIZE + (value == NULL ? 0 : value->size + value->vid_size), &upd));
     if (value != NULL && value->size != 0) {
         upd->size = WT_STORE_SIZE(value->size);
         memcpy(upd->data, value->data, value->size);
+        if(value->vid_size != 0) {
+            upd->vid_size = WT_STORE_SIZE(value->vid_size);
+            memcpy(upd->data + value->size, value->vid, value->vid_size);    
+        }
     }
     upd->type = (uint8_t)modify_type;
 

@@ -15,6 +15,10 @@ static int __curhs_file_cursor_search_near(WT_SESSION_IMPL *, WT_CURSOR *, int *
 static int __curhs_prev_visible(WT_SESSION_IMPL *, WT_CURSOR_HS *);
 static int __curhs_next_visible(WT_SESSION_IMPL *, WT_CURSOR_HS *);
 static int __curhs_search_near_helper(WT_SESSION_IMPL *, WT_CURSOR *, bool);
+
+static void __curhs_int_set_valuev_with_vid(WT_CURSOR *cursor, ...);
+static int __curhs_set_valuev_with_vid(WT_CURSOR *cursor, const char *fmt, va_list ap);
+
 /*
  * __curhs_file_cursor_open --
  *     Open a new history store table cursor, internal function.
@@ -181,6 +185,10 @@ __curhs_set_value_ptr(WT_CURSOR *hs_cursor, WT_CURSOR *file_cursor)
 {
     hs_cursor->value.data = file_cursor->value.data;
     hs_cursor->value.size = file_cursor->value.size;
+    if(file_cursor->value.vid_size != 0) {
+        hs_cursor->value.vid = file_cursor->value.vid;
+        hs_cursor->value.vid_size = file_cursor->value.vid_size;
+    }
     WT_ASSERT(CUR2S(file_cursor), F_ISSET(file_cursor, WT_CURSTD_VALUE_SET));
     F_SET(hs_cursor, F_MASK(file_cursor, WT_CURSTD_VALUE_SET));
 }
@@ -933,6 +941,115 @@ __curhs_set_value(WT_CURSOR *cursor, ...)
 }
 
 /*
+ * __curhs_set_value_with_vid --
+ *     WT_CURSOR->set_value_with_vid method for the history store cursor type.
+ */
+static void
+__curhs_set_value_with_vid(WT_CURSOR *cursor, ...)
+{
+    WT_CURSOR *file_cursor;
+    WT_CURSOR_HS *hs_cursor;
+    WT_ITEM *hs_val;
+    wt_timestamp_t start_ts;
+    wt_timestamp_t stop_ts;
+    uint64_t type;
+    va_list ap;
+
+    hs_cursor = (WT_CURSOR_HS *)cursor;
+    file_cursor = hs_cursor->file_cursor;
+    va_start(ap, cursor);
+    hs_cursor->time_window = *va_arg(ap, WT_TIME_WINDOW *);
+
+    stop_ts = va_arg(ap, wt_timestamp_t);
+    start_ts = va_arg(ap, wt_timestamp_t);
+    type = va_arg(ap, uint64_t);
+    hs_val = va_arg(ap, WT_ITEM *);
+    va_end(ap);
+
+    __curhs_int_set_valuev_with_vid(file_cursor, stop_ts, start_ts, type, hs_val);
+    /* TODO: kyu-jin: it would be better if it can be done in __curhs_set_valuev_with_vid */
+    // if(hs_val->vid_size != 0) {
+    //     file_cursor->value.vid_size = hs_val->vid_size;
+    //     file_cursor->value.size += hs_val->vid_size;
+    //     file_cursor->value.vid = (uint8_t *)hs_val->data + hs_val->size;
+    // }
+    
+    __curhs_set_value_ptr(cursor, file_cursor);
+}
+
+/*
+ * __curhs_set_valuev_with_vid --
+ *     WT_CURSOR->set_valuev_with_vid method for the history store cursor type.
+ */
+static void
+__curhs_int_set_valuev_with_vid(WT_CURSOR *cursor, ...)
+{
+    va_list ap;
+
+    va_start(ap, cursor);
+    WT_IGNORE_RET(__curhs_set_valuev_with_vid(cursor, cursor->value_format, ap));
+    va_end(ap);
+}
+
+/*
+ * __curhs_int_set_valuev_with_vid --
+ *     WT_CURSOR->__curhs_set_valuev_with_vid worker implementation.
+ *     This function is from __wt_cursor_set_valuev.
+ */
+static int
+__curhs_set_valuev_with_vid(WT_CURSOR *cursor, const char *fmt, va_list ap)
+{
+    WT_DECL_RET;
+    WT_ITEM *buf, tmp;
+    WT_SESSION_IMPL *session;
+    size_t sz;  
+    va_list ap_copy;
+
+    buf = &cursor->value;
+    tmp.mem = NULL;
+
+    CURSOR_API_CALL(cursor, session, set_value, NULL);
+    WT_ERR(__cursor_copy_release(cursor));
+    if (F_ISSET(cursor, WT_CURSTD_VALUE_SET) && WT_DATA_IN_ITEM(buf)) {
+        tmp = *buf;
+        buf->mem = NULL;
+        buf->memsize = 0;
+    }
+
+    F_CLR(cursor, WT_CURSTD_VALUE_SET);
+
+    va_copy(ap_copy, ap);
+    ret = __wt_struct_sizev(session, &sz, fmt, ap_copy);
+    va_end(ap_copy);
+    WT_ERR(ret);
+    WT_ERR(__wt_buf_initsize(session, buf, sz));
+    WT_ERR(__wt_struct_packv(session, buf->mem, sz, fmt, ap));
+    
+    F_SET(cursor, WT_CURSTD_VALUE_EXT);
+    buf->size = sz;
+
+    if (0) {
+err:
+        cursor->saved_err = ret;
+    }
+
+    /*
+     * If we copied the value, either put the memory back into the cursor, or if we allocated some
+     * memory in the meantime, free it.
+     */
+    if (tmp.mem != NULL) {
+        if (buf->mem == NULL && !FLD_ISSET(S2C(session)->debug_flags, WT_CONN_DEBUG_CURSOR_COPY)) {
+            buf->mem = tmp.mem;
+            buf->memsize = tmp.memsize;
+            F_SET(cursor, WT_CURSTD_DEBUG_COPY_VALUE);
+        } else
+            __wt_free(session, tmp.mem);
+    }
+
+    API_END_RET(session, ret);
+}
+
+/*
  * __curhs_insert --
  *     WT_CURSOR->insert method for the history store cursor type.
  */
@@ -973,7 +1090,8 @@ __curhs_insert(WT_CURSOR *cursor)
      * Allocate a tombstone only when there is a valid stop time point, and insert the standard
      * update as the update after the tombstone.
      */
-    if (WT_TIME_WINDOW_HAS_STOP(&hs_cursor->time_window)) {
+    // TODO: kyu-jin: This kind of implementation cannot support turn on/off the S3 bucket dynamically
+    if (hs_upd->vid_size != 0 && WT_TIME_WINDOW_HAS_STOP(&hs_cursor->time_window)) {
         /* We should not see a tombstone with max transaction id. */
         WT_ASSERT(session, hs_cursor->time_window.stop_txn != WT_TXN_MAX);
         /*
@@ -992,7 +1110,7 @@ __curhs_insert(WT_CURSOR *cursor)
         hs_tombstone->next = hs_upd;
         hs_upd = hs_tombstone;
     }
-
+    // (void)hs_tombstone;
     do {
         WT_WITH_PAGE_INDEX(session, ret = __curhs_search(cbt, true));
         WT_ERR(ret);
@@ -1237,8 +1355,8 @@ __wt_curhs_open(WT_SESSION_IMPL *session, WT_CURSOR *owner, WT_CURSOR **cursorp)
       __wt_cursor_get_raw_key_value_notsup,           /* get-raw-key-value */
       __curhs_set_key,                                /* set-key */
       __curhs_set_value,                              /* set-value */
-      __wt_cursor_set_key_with_vid_notsup,            /* set-key */
-      __wt_cursor_set_value_with_vid_notsup,          /* set-value */
+      __wt_cursor_set_key_with_vid_notsup,            /* set-key-with-vid */
+      __curhs_set_value_with_vid,                     /* set-value-with-vid */
       __curhs_compare,                                /* compare */
       __wt_cursor_equals_notsup,                      /* equals */
       __curhs_next,                                   /* next */
