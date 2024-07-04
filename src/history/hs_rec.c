@@ -213,7 +213,7 @@ __hs_insert_record(WT_SESSION_IMPL *session, WT_CURSOR *cursor, WT_BTREE *btree,
         error_on_ts_ordering = false;
     }
 
-    if (ret == 0)
+    if (ret == 0 && hs_value->vid_size == 0)
         WT_ERR(__hs_delete_reinsert_from_pos(session, cursor, btree->id, key, tw->start_ts + 1,
           true, false, error_on_ts_ordering, &counter, tw));
 

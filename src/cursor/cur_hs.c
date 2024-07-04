@@ -968,11 +968,11 @@ __curhs_set_value_with_vid(WT_CURSOR *cursor, ...)
 
     __curhs_int_set_valuev_with_vid(file_cursor, stop_ts, start_ts, type, hs_val);
     /* TODO: kyu-jin: it would be better if it can be done in __curhs_set_valuev_with_vid */
-    // if(hs_val->vid_size != 0) {
-    //     file_cursor->value.vid_size = hs_val->vid_size;
-    //     file_cursor->value.size += hs_val->vid_size;
-    //     file_cursor->value.vid = (uint8_t *)hs_val->data + hs_val->size;
-    // }
+    if(hs_val->vid_size != 0) {
+        file_cursor->value.vid_size = hs_val->vid_size;
+        // file_cursor->value.size += hs_val->vid_size;
+        file_cursor->value.vid = (uint8_t *)hs_val->data + hs_val->size;
+    }
     
     __curhs_set_value_ptr(cursor, file_cursor);
 }
@@ -1086,12 +1086,15 @@ __curhs_insert(WT_CURSOR *cursor)
     hs_upd->durable_ts = hs_cursor->time_window.durable_start_ts;
     hs_upd->txnid = hs_cursor->time_window.start_txn;
 
+    if(hs_upd->vid_size != 0)
+        hs_upd->size += file_cursor->value.vid_size;
+
     /*
      * Allocate a tombstone only when there is a valid stop time point, and insert the standard
      * update as the update after the tombstone.
      */
     // TODO: kyu-jin: This kind of implementation cannot support turn on/off the S3 bucket dynamically
-    if (hs_upd->vid_size != 0 && WT_TIME_WINDOW_HAS_STOP(&hs_cursor->time_window)) {
+    if (hs_upd->vid_size == 0 && WT_TIME_WINDOW_HAS_STOP(&hs_cursor->time_window)) {
         /* We should not see a tombstone with max transaction id. */
         WT_ASSERT(session, hs_cursor->time_window.stop_txn != WT_TXN_MAX);
         /*
