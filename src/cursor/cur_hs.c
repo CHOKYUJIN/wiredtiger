@@ -1086,6 +1086,10 @@ __curhs_insert(WT_CURSOR *cursor)
     hs_upd->durable_ts = hs_cursor->time_window.durable_start_ts;
     hs_upd->txnid = hs_cursor->time_window.start_txn;
 
+    /* 
+     * TODO: kyu-jin: In case of reading old version, this might be not work    
+     * because we don't know the exact length of data and vid in that time, so we need to consider this case later.
+     */
     if(hs_upd->vid_size != 0)
         hs_upd->size += file_cursor->value.vid_size;
 
