@@ -843,7 +843,7 @@ __hs_delete_reinsert_from_pos(WT_SESSION_IMPL *session, WT_CURSOR *hs_cursor, ui
     int cmp;
 #endif
     char ts_string[5][WT_TS_INT_STRING_SIZE];
-
+    (void)error_on_ts_ordering;
     hs_insert_cursor = NULL;
     hs_cbt = __wt_curhs_get_cbt(hs_cursor);
     WT_CLEAR(hs_key);
@@ -945,11 +945,12 @@ __hs_delete_reinsert_from_pos(WT_SESSION_IMPL *session, WT_CURSOR *hs_cursor, ui
      * cannot modify the history store to fix the update's timestamps as it may make the history
      * store checkpoint inconsistent.
      */
-    if (error_on_ts_ordering) {
-        ret = EBUSY;
-        WT_STAT_CONN_INCR(session, cache_eviction_fail_checkpoint_no_ts);
-        goto err;
-    }
+    // TODO: kyu-jin: current implementation loses the functionality of History Store with error_on_ts_ordering
+    // if (error_on_ts_ordering) {
+    //     ret = EBUSY;
+    //     WT_STAT_CONN_INCR(session, cache_eviction_fail_checkpoint_no_ts);
+    //     goto err;
+    // }
 
     /*
      * The goal of this function is to move no timestamp content to maintain ordering in the

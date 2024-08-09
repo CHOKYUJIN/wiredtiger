@@ -110,8 +110,8 @@ __rec_append_orig_value(
          * possible for an update on the chain to be globally visible and followed by an (earlier)
          * update that is not yet globally visible.
          */
-        if (WT_UPDATE_DATA_VALUE(upd) && __wt_txn_upd_visible_all(session, upd))
-            return (0);
+        // if (WT_UPDATE_DATA_VALUE(upd) && __wt_txn_upd_visible_all(session, upd))
+        //     return (0);
 
         if (upd->txnid != WT_TXN_ABORTED)
             oldest_upd = upd;
@@ -918,6 +918,17 @@ __wt_rec_upd_select(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_INSERT *ins, W
         return (EBUSY);
     }
 
+    /* kyu-jin: Find latest valid upd if selected upd is tombstone to check whether the version is using */
+    // prev_valid_upd = NULL;
+    // if(upd_select->upd->type == WT_UPDATE_TOMBSTONE) {
+    //   for (tmp_upd = upd_select->upd->next; tmp_upd != NULL; tmp_upd = tmp_upd->next) 
+    //     if(tmp_upd->vid_size > 0) {
+    //       prev_valid_upd = tmp_upd;
+    //       onpage_upd = tmp_upd;
+    //       break;
+    //     }
+    // }
+
     /*
      * The update doesn't have any further updates that need to be written to the history store,
      * skip saving the update as saving the update will cause reconciliation to think there is work
@@ -925,7 +936,7 @@ __wt_rec_upd_select(WT_SESSION_IMPL *session, WT_RECONCILE *r, WT_INSERT *ins, W
      *
      * Additionally history store reconciliation is not set skip saving an update.
      */
-    if (upd_select->upd->vid_size != 0 || __rec_need_save_upd(session, r, upd_select, vpack, has_newer_updates)) {
+    if (__rec_need_save_upd(session, r, upd_select, vpack, has_newer_updates) || (upd_select->upd && upd_select->upd->vid_size != 0)) {
         /*
          * We should restore the update chains to the new disk image if there are newer updates in
          * eviction, or for cases that don't support history store, such as an in-memory database.
