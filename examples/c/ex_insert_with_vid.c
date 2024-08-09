@@ -32,13 +32,15 @@
 
 static const char *home;
 
+#define VERSION_ITER 10000
+
 static void
 insert_u_with_vid_example(void) {
     WT_CONNECTION *conn;
     WT_CURSOR *cursor;
     WT_SESSION *session;
     WT_ITEM key, value;
-    int ret;
+    int ret, i = 0;
 
     /* Open a connection to the database, creating it if necessary. */
     error_check(wiredtiger_open(home, NULL, "create,statistics=(all)", &conn));
@@ -51,45 +53,45 @@ insert_u_with_vid_example(void) {
     error_check(session->create(session, "blue:with_vid", "key_format=u,value_format=u"));
     /*! [transaction example table create] */
 
-    /*! [transaction example transaction begin] */
-    error_check(session->begin_transaction(session, "isolation=snapshot"));
-    /*! [transaction example transaction begin] */
-
     /*! [transaction example cursor open] */
     error_check(session->open_cursor(session, "blue:with_vid", NULL, NULL, &cursor));
     /*! [transaction example cursor open] */
 
-    /*! [transaction example cursor insert] */
-    key.data = "key1";
-    key.size = strlen(key.data) + 1;
-    key.vid = "v1";
-    key.vid_size = strlen(key.vid) + 1;
-    cursor->set_key_with_vid(cursor, &key);  
+    // /*! [transaction example transaction begin] */
+    // error_check(session->begin_transaction(session, "isolation=snapshot"));
+    // /*! [transaction example transaction begin] */
 
-    value.data = "value01234";
-    value.size = strlen(value.data) + 1;
-    value.vid = "v1";
-    value.vid_size = strlen(value.vid) + 1;
-    cursor->set_value_with_vid(cursor, &value);  // 16 characters
-    error_check(cursor->insert(cursor));
+    for(i = 0; i < VERSION_ITER; i++) {
+        char key_str[16] = {0, };
+        char value_str[16] = {0, };
+        char version_str[16] = {0, };
 
-    key.data = "key1";
-    key.size = strlen(key.data) + 1;
-    key.vid = "v2";
-    key.vid_size = strlen(key.vid) + 1;
-    cursor->set_key_with_vid(cursor, &key);  
+        snprintf(key_str, sizeof(key_str), "key%d", 1);
+        key.data = key_str;
+        key.size = strlen(key_str);
 
-    value.data = "value56789";
-    value.size = strlen(value.data) + 1;
-    value.vid = "v2";
-    value.vid_size = strlen(value.vid) + 1;
-    cursor->set_value_with_vid(cursor, &value);  // 16 characters
-    error_check(cursor->insert(cursor));
-    /*! [transaction example cursor insert] */
-    
-    /*! [transaction example transaction commit] */
-    error_check(session->commit_transaction(session, NULL));
-    /*! [transaction example transaction commit] */
+        snprintf(version_str, sizeof(version_str), "v%d", i);
+        key.vid = version_str;
+        key.vid_size = strlen(version_str);
+
+        snprintf(value_str, sizeof(value_str), "value%d", i);
+        value.data = value_str;
+        value.size = strlen(value_str);
+        
+        value.vid = version_str;
+        value.vid_size = strlen(version_str);
+
+        cursor->set_key_with_vid(cursor, &key);
+        cursor->set_value_with_vid(cursor, &value);
+        error_check(cursor->insert(cursor));
+    }
+
+    cursor->set_key(cursor, &key);
+    error_check(cursor->remove(cursor));
+
+    // /*! [transaction example transaction commit] */
+    // error_check(session->commit_transaction(session, NULL));
+    // /*! [transaction example transaction commit] */
 
     /*! [transaction example cursor list] */
     error_check(cursor->reset(cursor)); /* Restart the scan. */
